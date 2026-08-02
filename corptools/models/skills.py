@@ -100,7 +100,7 @@ def valid_skills(value):
                 )
     except ValueError:
         raise ValidationError(
-            _('Please check format for valid JSON. Hint: ["skill name": 4, "skill name 2": 1]')
+            _('Please check format for valid JSON. Hint: {"skill name": "4", "skill name 2": "1"}')
         )
 
 

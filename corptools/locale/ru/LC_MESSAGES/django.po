@@ -252,11 +252,11 @@ msgstr ""
 
 #: corptools/models/skills.py:92
 msgid ""
-"Please check format for valid JSON. Hint: [\"skill name\": 4, \"skill name "
-"2\": 1]"
+"Please check format for valid JSON. Hint: {\"skill name\": \"4\", \"skill "
+"name 2\": \"1\"}"
 msgstr ""
-"Пожалуйста, проверьте формат на соответствие JSON. Подсказка: [\"skill "
-"name\": 4, \"skill name 2\": 1]"
+"Пожалуйста, проверьте формат на соответствие JSON. Подсказка: {\"skill "
+"name\": \"4\", \"skill name 2\": \"1\"}"
 
 #: corptools/templates/corptools/admin.html:3
 msgid "Corptools Admin"

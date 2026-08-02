@@ -252,8 +252,8 @@ msgstr ""
 
 #: corptools/models/skills.py:92
 msgid ""
-"Please check format for valid JSON. Hint: [\"skill name\": 4, \"skill name "
-"2\": 1]"
+"Please check format for valid JSON. Hint: {\"skill name\": \"4\", \"skill "
+"name 2\": \"1\"}"
 msgstr ""
 "Будь ласка, перевірте формат на валідний JSON. Підказка: [\"назва навички\":"
 " 4, \"назва навички 2\": 1]"
