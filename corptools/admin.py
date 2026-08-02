@@ -1,5 +1,4 @@
 # Third Party
-from eve_sde.models import ItemType
 from solo.admin import SingletonModelAdmin
 
 # Django
@@ -41,20 +40,6 @@ class EveLocationAdmin(admin.ModelAdmin):
 
     def get_model_perms(self, request):
         return {}
-
-
-if not admin.site.is_registered(ItemType):
-    @admin.register(ItemType)
-    class ItemTypeAdmin(admin.ModelAdmin):
-        search_fields = ['name']
-        list_display = ['name', 'id']
-
-        def get_model_perms(self, request):
-            return {}
-else:
-    item_type_admin = admin.site._registry[ItemType]
-    if not getattr(item_type_admin, "search_fields", None):
-        item_type_admin.search_fields = ['name']
 
 
 @admin.register(models.CorptoolsConfiguration)
