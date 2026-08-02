@@ -126,7 +126,8 @@ def filters():
         models.HighestSPFilter,
         models.CurrentShipFilter,
         models.HomeStationFilter,
-        models.JumpCloneFilter
+        models.JumpCloneFilter,
+        models.JumpCloneImplantSetFilter
     ]
 
 

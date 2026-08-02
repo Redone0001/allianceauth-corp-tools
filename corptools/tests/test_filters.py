@@ -8,6 +8,7 @@ from eve_sde import models as sde_models
 
 # Django
 from django.contrib.auth.models import Group, User
+from django.core.exceptions import ValidationError
 from django.db.models import F
 from django.test import TestCase
 from django.utils import timezone
@@ -2340,6 +2341,154 @@ class TestSecGroupBotFilters(TestCase):
         self.assertFalse(_filter.process_filter(User.objects.get(id=1)))
         tests = _filter.audit_filter(User.objects.filter(id__in=[1]))
         self.assertFalse(tests[1]["check"])
+
+    def _create_implant_type(self, type_id, name, slot):
+        group, _ = sde_models.ItemGroup.objects.get_or_create(
+            id=2000,
+            defaults={"name": "Implants"},
+        )
+        implant = sde_models.ItemType.objects.create(
+            id=type_id,
+            name=name,
+            published=True,
+            group=group,
+        )
+        slot_attribute, _ = sde_models.DogmaAttribute.objects.get_or_create(
+            id=331,
+            defaults={
+                "name": "implantness",
+                "description": "Implant slot",
+                "published": True,
+            },
+        )
+        sde_models.TypeDogma.objects.create(
+            dogma_attribute=slot_attribute,
+            item_type=implant,
+            value=slot,
+        )
+        return implant
+
+    def _create_implant_requirement(self, implant_filter, slot, *implants):
+        requirement = ct_models.JumpCloneImplantRequirement.objects.create(
+            filter=implant_filter,
+            slot=slot,
+        )
+        requirement.implants.add(*implants)
+        return requirement
+
+    def test_user_jump_clone_implant_set(self):
+        alpha = self._create_implant_type(9001, "Alpha", 1)
+        alpha_bis = self._create_implant_type(9002, "Alpha Bis", 1)
+        beta = self._create_implant_type(9003, "Beta", 2)
+        gamma = self._create_implant_type(9004, "Gamma", 3)
+
+        user1_audit = ct_models.CharacterAudit.objects.get(
+            character=User.objects.get(id=1).profile.main_character)
+        user2_audit = ct_models.CharacterAudit.objects.get(
+            character=User.objects.get(id=2).profile.main_character)
+
+        matching_clone = ct_models.JumpClone.objects.create(
+            character=user1_audit,
+            jump_clone_id=1,
+            location_id=1,
+            location_type="station",
+            name="Doctrine Clone",
+        )
+        ct_models.Implant.objects.bulk_create([
+            ct_models.Implant(clone=matching_clone, type_name=alpha_bis),
+            ct_models.Implant(clone=matching_clone, type_name=beta),
+            ct_models.Implant(clone=matching_clone, type_name=gamma),
+        ])
+
+        partial_clone = ct_models.JumpClone.objects.create(
+            character=user2_audit,
+            jump_clone_id=1,
+            location_id=1,
+            location_type="station",
+            name="Partial Clone",
+        )
+        ct_models.Implant.objects.create(clone=partial_clone, type_name=alpha)
+
+        implant_filter = ct_models.JumpCloneImplantSetFilter.objects.create(
+            name="Implant Set Test",
+            description="Something to tell user",
+        )
+        self._create_implant_requirement(implant_filter, 1, alpha, alpha_bis)
+        self._create_implant_requirement(implant_filter, 2, beta)
+        self._create_implant_requirement(implant_filter, 3, gamma)
+
+        self.assertTrue(implant_filter.process_filter(User.objects.get(id=1)))
+        self.assertFalse(implant_filter.process_filter(User.objects.get(id=2)))
+
+        tests = implant_filter.audit_filter(User.objects.filter(id__in=[1, 2]))
+        self.assertTrue(tests[1]["check"])
+        self.assertIn("Doctrine Clone", tests[1]["message"])
+        self.assertFalse(tests[2]["check"])
+
+    def test_user_jump_clone_implant_set_must_match_same_clone(self):
+        alpha = self._create_implant_type(9011, "Split Alpha", 1)
+        beta = self._create_implant_type(9012, "Split Beta", 2)
+
+        user1_audit = ct_models.CharacterAudit.objects.get(
+            character=User.objects.get(id=1).profile.main_character)
+        clone_one = ct_models.JumpClone.objects.create(
+            character=user1_audit,
+            jump_clone_id=1,
+            location_id=1,
+            location_type="station",
+            name="Alpha Clone",
+        )
+        clone_two = ct_models.JumpClone.objects.create(
+            character=user1_audit,
+            jump_clone_id=2,
+            location_id=1,
+            location_type="station",
+            name="Beta Clone",
+        )
+        ct_models.Implant.objects.create(clone=clone_one, type_name=alpha)
+        ct_models.Implant.objects.create(clone=clone_two, type_name=beta)
+
+        implant_filter = ct_models.JumpCloneImplantSetFilter.objects.create(
+            name="Same Clone Test",
+            description="Something to tell user",
+        )
+        self._create_implant_requirement(implant_filter, 1, alpha)
+        self._create_implant_requirement(implant_filter, 2, beta)
+
+        self.assertFalse(implant_filter.process_filter(User.objects.get(id=1)))
+
+    def test_user_jump_clone_implant_set_can_ignore_active_clone(self):
+        alpha = self._create_implant_type(9021, "Active Alpha", 1)
+
+        user1_audit = ct_models.CharacterAudit.objects.get(
+            character=User.objects.get(id=1).profile.main_character)
+        active_clone = ct_models.JumpClone.objects.create(
+            character=user1_audit,
+            jump_clone_id=0,
+            name="Active Clone",
+        )
+        ct_models.Implant.objects.create(clone=active_clone, type_name=alpha)
+
+        implant_filter = ct_models.JumpCloneImplantSetFilter.objects.create(
+            name="Ignore Active Clone Test",
+            description="Something to tell user",
+            include_active_clone=False,
+        )
+        self._create_implant_requirement(implant_filter, 1, alpha)
+
+        self.assertFalse(implant_filter.process_filter(User.objects.get(id=1)))
+        implant_filter.include_active_clone = True
+        implant_filter.save()
+        self.assertTrue(implant_filter.process_filter(User.objects.get(id=1)))
+
+    def test_jump_clone_implant_requirement_slot_validation(self):
+        alpha = self._create_implant_type(9031, "Validated Alpha", 1)
+        beta = self._create_implant_type(9032, "Validated Beta", 2)
+
+        self.assertEqual(ct_models.get_implant_slot(alpha), 1)
+        ct_models.validate_implants_match_slot([alpha], 1)
+        with self.assertRaises(ValidationError):
+            ct_models.validate_implants_match_slot([beta], 1)
 
     def test_user_highest_sp(self):
         user1_audit = ct_models.CharacterAudit.objects.get(

@@ -205,3 +205,4 @@ Make sure you have signed the [License Agreement](https://developers.eveonline.c
 ## Jakaja Improvement
 
 - Skill lists now support an optional category. Doctrine checks expose that category to the web UI, and the skill list check page can filter visible skill lists by one or more categories beneath the percentage complete filter. Uncategorized skill lists are available under the `Other` category.
+- Smart groups can define jump clone implant set filters. Each requirement row accepts any selected implant for that slot, and every row must match within the same clone.

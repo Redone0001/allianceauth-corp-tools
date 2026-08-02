@@ -1,4 +1,5 @@
 # Third Party
+from eve_sde.models import ItemType
 from solo.admin import SingletonModelAdmin
 
 # Django
@@ -40,6 +41,20 @@ class EveLocationAdmin(admin.ModelAdmin):
 
     def get_model_perms(self, request):
         return {}
+
+
+if not admin.site.is_registered(ItemType):
+    @admin.register(ItemType)
+    class ItemTypeAdmin(admin.ModelAdmin):
+        search_fields = ['name']
+        list_display = ['name', 'id']
+
+        def get_model_perms(self, request):
+            return {}
+else:
+    item_type_admin = admin.site._registry[ItemType]
+    if not getattr(item_type_admin, "search_fields", None):
+        item_type_admin.search_fields = ['name']
 
 
 @admin.register(models.CorptoolsConfiguration)
@@ -426,6 +441,32 @@ class JumpCloneFilterAdmin(AutocompleteMediaMixin, admin.ModelAdmin):
     autocomplete_fields = ["evelocation"]
 
 
+class JumpCloneImplantRequirementForm(forms.ModelForm):
+    class Meta:
+        model = models.JumpCloneImplantRequirement
+        fields = "__all__"
+
+    def clean_implants(self):
+        implants = self.cleaned_data.get("implants")
+        slot = self.cleaned_data.get("slot")
+        if slot and implants:
+            models.validate_implants_match_slot(implants, slot)
+        return implants
+
+
+class JumpCloneImplantRequirementInline(AutocompleteMediaMixin, admin.TabularInline):
+    model = models.JumpCloneImplantRequirement
+    form = JumpCloneImplantRequirementForm
+    autocomplete_fields = ["implants"]
+    extra = 1
+
+
+class JumpCloneImplantSetFilterAdmin(AutocompleteMediaMixin, admin.ModelAdmin):
+    autocomplete_fields = ["evelocation"]
+    inlines = [JumpCloneImplantRequirementInline]
+    list_display = ['__str__', 'include_active_clone']
+
+
 class UpdateSectionFilterForm(forms.ModelForm):
     sections = forms.MultipleChoiceField(
         choices=[(key, label)
@@ -461,5 +502,7 @@ if apps.is_installed('securegroups'):
     if app_settings.CT_CHAR_CLONES_MODULE:
         admin.site.register(models.HomeStationFilter, HomeStationFilterAdmin)
         admin.site.register(models.JumpCloneFilter, JumpCloneFilterAdmin)
+        admin.site.register(models.JumpCloneImplantSetFilter,
+                            JumpCloneImplantSetFilterAdmin)
     admin.site.register(models.HighestSPFilter)
     admin.site.register(models.LastLoginfilter, LoginAdmin)

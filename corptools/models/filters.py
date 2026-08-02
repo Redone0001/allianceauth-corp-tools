@@ -11,11 +11,12 @@ from eve_sde.models import (
     ItemType,
     Region,
     SolarSystem,
+    TypeDogma,
 )
 
 # Django
 from django.contrib.auth.models import User
-from django.core.exceptions import ObjectDoesNotExist
+from django.core.exceptions import ObjectDoesNotExist, ValidationError
 from django.db import models
 from django.db.models import F, Max, Min
 from django.utils import timezone
@@ -35,6 +36,36 @@ from .interactions import CharacterTitle, CorporationHistory
 from .skills import SkillList, SkillTotals
 
 logger = logging.getLogger(__name__)
+
+IMPLANT_SLOT_DOGMA_ATTRIBUTE_ID = 331
+UNCATEGORIZED_IMPLANT_SLOT = None
+
+
+def get_implant_slot(item_type: ItemType):
+    slot = TypeDogma.objects.filter(
+        item_type=item_type,
+        dogma_attribute_id=IMPLANT_SLOT_DOGMA_ATTRIBUTE_ID,
+    ).values_list("value", flat=True).first()
+    if slot is None:
+        return UNCATEGORIZED_IMPLANT_SLOT
+    return int(slot)
+
+
+def validate_implants_match_slot(implants, slot):
+    invalid_implants = []
+    for implant in implants:
+        implant_slot = get_implant_slot(implant)
+        if implant_slot != slot:
+            invalid_implants.append(
+                f"{implant.name} (slot {implant_slot or 'unknown'})")
+    if invalid_implants:
+        raise ValidationError(
+            _("Selected implants must match slot %(slot)s: %(implants)s"),
+            params={
+                "slot": slot,
+                "implants": ", ".join(invalid_implants),
+            }
+        )
 
 
 class FilterBase(models.Model):
@@ -1104,6 +1135,154 @@ class JumpCloneFilter(FilterBase):
             else:
                 output[u.id] = {"message": "", "check": False}
         return output
+
+
+class JumpCloneImplantSetFilter(FilterBase):
+    class Meta:
+        verbose_name = "Smart Filter: Jump Clone Implant Set"
+        verbose_name_plural = verbose_name
+
+    include_active_clone = models.BooleanField(
+        default=True,
+        help_text="Include the active clone implant set in this filter.",
+    )
+
+    evelocation = models.ManyToManyField(
+        EveLocation,
+        blank=True,
+        help_text="Optionally limit filter to specific structures.",
+    )
+
+    def _requirements(self):
+        return list(
+            self.requirements.prefetch_related("implants").order_by("slot", "id")
+        )
+
+    def filter_query(self, users):
+        requirements = self._requirements()
+        if not requirements:
+            return JumpClone.objects.none()
+
+        required_implant_sets = []
+        for requirement in requirements:
+            implant_ids = set(requirement.implants.values_list("id", flat=True))
+            if not implant_ids:
+                return JumpClone.objects.none()
+            required_implant_sets.append(implant_ids)
+
+        character_list = CharacterOwnership.objects.filter(user__in=users)
+        clones = JumpClone.objects.filter(
+            character__character__in=character_list.values_list("character")
+        )
+
+        if not self.include_active_clone:
+            clones = clones.exclude(jump_clone_id=0)
+
+        evelocation = list(self.evelocation.all())
+        if evelocation:
+            query = models.Q(location_name__in=evelocation) | models.Q(
+                location_id__in=[el.location_id for el in evelocation]
+            )
+            clones = clones.filter(query)
+
+        matching_clone_ids = []
+        for clone in clones.prefetch_related("implant_set"):
+            clone_implants = {
+                implant.type_name_id
+                for implant in clone.implant_set.all()
+                if implant.type_name_id is not None
+            }
+            if all(clone_implants & implant_ids for implant_ids in required_implant_sets):
+                matching_clone_ids.append(clone.id)
+
+        return JumpClone.objects.filter(id__in=matching_clone_ids)
+
+    def process_filter(self, user: User):
+        try:
+            return self.filter_query([user]).exists()
+        except Exception as e:
+            logger.exception(e)
+            return False
+
+    def audit_filter(self, users):
+        co = list(
+            self.filter_query(users)
+            .select_related(
+                "character__character",
+                "location_name",
+            )
+            .prefetch_related(
+                "implant_set__type_name",
+            )
+        )
+
+        ownerships = {
+            ownership.character_id: ownership.user_id
+            for ownership in CharacterOwnership.objects.filter(
+                character__in=[clone.character.character for clone in co]
+            )
+        }
+
+        chars = defaultdict(dict)
+        for clone in co:
+            uid = ownerships.get(clone.character.character_id)
+            if uid is None:
+                continue
+            char_name = clone.character.character.character_name
+            clone_name = clone.name or f"Clone {clone.jump_clone_id}"
+            if clone.jump_clone_id == 0:
+                clone_name = clone.name or "Active Clone"
+            if clone.location_name:
+                clone_name = f"{clone_name} @ {clone.location_name.location_name}"
+            elif clone.location_id:
+                clone_name = f"{clone_name} @ {clone.location_id}"
+
+            implants = sorted(
+                implant.type_name.name
+                for implant in clone.implant_set.all()
+                if implant.type_name is not None
+            )
+
+            if char_name not in chars[uid]:
+                chars[uid][char_name] = []
+            chars[uid][char_name].append(
+                f"{clone_name}: {', '.join(implants)}")
+
+        output = defaultdict(lambda: {"message": "", "check": False})
+        for u in users:
+            if len(chars[u.id]) > 0:
+                out_message = []
+                for char, clones in chars[u.id].items():
+                    out_message.append(f"{char}: {'<br>'.join(clones)}")
+                output[u.id] = {
+                    "message": "<br>".join(out_message),
+                    "check": True,
+                }
+            else:
+                output[u.id] = {"message": "", "check": False}
+        return output
+
+
+class JumpCloneImplantRequirement(models.Model):
+    filter = models.ForeignKey(
+        JumpCloneImplantSetFilter,
+        related_name="requirements",
+        on_delete=models.CASCADE,
+    )
+    slot = models.PositiveSmallIntegerField(
+        choices=[(slot, f"Slot {slot}") for slot in range(1, 11)],
+        help_text="All selected implants for this requirement must use this implant slot.",
+    )
+    implants = models.ManyToManyField(
+        ItemType,
+        help_text="Any one selected implant satisfies this slot requirement.",
+    )
+
+    class Meta:
+        ordering = ["slot", "id"]
+
+    def __str__(self):
+        return f"{self.filter.name}: Slot {self.slot}"
 
 
 class CharacterAgeFilter(FilterBase):
