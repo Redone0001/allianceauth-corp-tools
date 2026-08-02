@@ -355,10 +355,14 @@ def admin_add_pyfa_xml(request):
                                     skills[skill] = level
                             else:
                                 skills[skill] = level
-                sl, created = SkillList.objects.update_or_create(name=request.POST["name"],
-                                                                 defaults={
-                    "skill_list": json.dumps(skills)
-                })
+                category = request.POST.get("category", "").strip() or None
+                sl, created = SkillList.objects.update_or_create(
+                    name=request.POST["name"],
+                    defaults={
+                        "category": category,
+                        "skill_list": json.dumps(skills)
+                    }
+                )
 
                 messages.success(request, "File Uploaded and Processed! {}: {}".format(
                     ("Created" if created else "Updated"),
@@ -443,7 +447,10 @@ def admin_add_fitting(request):
 
     sl, created = SkillList.objects.update_or_create(
         name=name,
-        defaults={"skill_list": json.dumps(skills)}
+        defaults={
+            "category": request.POST.get("category", "").strip() or None,
+            "skill_list": json.dumps(skills),
+        }
     )
     messages.success(
         request,

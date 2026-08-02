@@ -153,8 +153,9 @@ class CorporationWalletJournalEntryAdmin(admin.ModelAdmin):
 
 @admin.register(models.SkillList)
 class SkillListAdmin(admin.ModelAdmin):
-    list_display = ['order_weight', 'name', 'last_update']
-    search_fields = ['name', 'skill_list', ]
+    list_display = ['order_weight', 'name', 'category', 'last_update']
+    list_filter = ['category']
+    search_fields = ['name', 'category', 'skill_list', ]
 
 
 @admin.register(models.MapJumpBridge)

@@ -20,6 +20,7 @@ from corptools.models.interactions import (
     LoyaltyPoint,
 )
 from corptools.models.skills import Skill, SkillList, SkillTotalHistory, valid_skills
+from corptools.task_helpers.skill_helpers import SkillListCache
 
 from . import CorptoolsTestCase
 
@@ -67,6 +68,55 @@ class TestSkillListStr(CorptoolsTestCase):
         result = str(sl)
         self.assertIn("Test List", result)
         self.assertIn("5", result)
+
+
+class TestSkillListCache(CorptoolsTestCase):
+    def test_skill_list_hash_handles_duplicate_names_with_blank_category(self):
+        result = SkillListCache()._get_skill_list_hash([
+            ("Tackle", None),
+            ("Tackle", "Fleet"),
+        ])
+
+        self.assertIsInstance(result, str)
+
+    def test_check_skill_lists_includes_category_metadata(self):
+        group = sde_models.ItemGroup.objects.create(id=99, name="TestGroup")
+        skill_type = sde_models.ItemType.objects.create(
+            id=99, name="Afterburner", published=True, group=group)
+        dogma_attribute = sde_models.DogmaAttribute.objects.create(
+            id=275,
+            name="Skill Time Constant",
+            description="The skill training multiplier",
+            published=True,
+        )
+        sde_models.TypeDogma.objects.create(
+            dogma_attribute=dogma_attribute,
+            item_type=skill_type,
+            value=1.0,
+        )
+        Skill.objects.create(
+            character=self.ca1,
+            skill_id=skill_type.id,
+            skill_name=skill_type,
+            active_skill_level=0,
+            trained_skill_level=0,
+            skillpoints_in_skill=0,
+        )
+        skill_list = SkillList.objects.create(
+            name="Tackle",
+            category="Fleet",
+            skill_list='{"Afterburner": 1}',
+        )
+
+        result = SkillListCache().check_skill_lists(
+            [skill_list],
+            [self.char1.character_id],
+        )
+
+        self.assertEqual(
+            result[self.char1.character_name]["doctrines"]["Tackle"]["_meta"]["category"],
+            "Fleet",
+        )
 
 
 class TestValidSkillsValidator(TestCase):

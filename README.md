@@ -201,3 +201,7 @@ this is to be able to lookup location names.
 ## Contributing
 
 Make sure you have signed the [License Agreement](https://developers.eveonline.com/resource/license-agreement) by logging in at https://developers.eveonline.com before submitting any pull requests. All bug fixes or features must not include extra superfluous formatting changes.
+
+## Jakaja Improvement
+
+- Skill lists now support an optional category. Doctrine checks expose that category to the web UI, and the skill list check page can filter visible skill lists by one or more categories beneath the percentage complete filter. Uncategorized skill lists are available under the `Other` category.

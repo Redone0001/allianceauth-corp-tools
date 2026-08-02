@@ -27,7 +27,7 @@ class SkillListCache():
         return SKILL_CACHE_USER_KEY.format(self._get_chars_hash(characters))
 
     def _get_skill_list_hash(self, skills):
-        return md5(",".join(str(x) for x in sorted(skills)).encode()).hexdigest()
+        return md5(",".join(sorted(str(x) for x in skills)).encode()).hexdigest()
 
     def get_and_cache_users(self, users):
         from ..models import SkillList  # TODO fix the recursive import
@@ -36,7 +36,7 @@ class SkillListCache():
             'user_id', 'character__character_name', 'character__character_id')
         skill_lists = SkillList.objects.all().order_by('order_weight', 'name')
         skill_list_hash = self._get_skill_list_hash(
-            skill_lists.values_list('name'))
+            skill_lists.values_list('name', 'category'))
         cached_header = cache.get(SKILL_CACHE_HEADERS_KEY, False)
         skill_lists_up_to_date = cached_header == skill_list_hash
 
@@ -81,6 +81,7 @@ class SkillListCache():
 
         skill_tables = {}
         skill_list_base = {}
+        skill_list_categories = {}
 
         for skill in skills:
             char = skill.character.character.character_name
@@ -123,6 +124,7 @@ class SkillListCache():
                     pass
 
             skill_list_base[skl.name] = _s
+            skill_list_categories[skl.name] = skl.category
 
         for char in skill_tables:
             skill_tables[char]["doctrines"] = {}
@@ -130,7 +132,8 @@ class SkillListCache():
                 skill_tables[char]["doctrines"][d_name] = {
                     "_meta": {
                         "total_sp": 0,
-                        "trained_sp": 0
+                        "trained_sp": 0,
+                        "category": skill_list_categories.get(d_name)
                     }
                 }
                 for skill, level in d_list.items():
@@ -165,7 +168,7 @@ class SkillListCache():
         skill_lists = SkillList.objects.all().order_by('order_weight', 'name')
 
         skill_list_hash = self._get_skill_list_hash(
-            skill_lists.values_list('name')
+            skill_lists.values_list('name', 'category')
         )
 
         account_key = self._build_account_cache_key(linked_characters)

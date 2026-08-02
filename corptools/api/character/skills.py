@@ -259,7 +259,7 @@ class SkillApiEndpoints:
 
             skilllists = providers.skills.get_and_cache_user(
                 main.character_ownership.user_id)
-            visibles = list(models.SkillList.objects.filter(
+            visibles = set(models.SkillList.objects.filter(
                 show_on_audit=True).values_list("name", flat=True))
             output = {}
             for c in characters:

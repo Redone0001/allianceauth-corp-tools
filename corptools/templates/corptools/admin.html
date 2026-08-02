@@ -459,6 +459,10 @@
                     <input type="text" class="form-control" name="name" placeholder="Enter Description">
                     <div id="nameHelp" class="form-text">{% translate "This will show as the name of the Skill List" %}.</div>
                 </div>
+                <div class="form-group mb-3">
+                    <label for="category">{% translate "Skill List Category" %}</label>
+                    <input type="text" class="form-control" name="category" placeholder="{% translate "Enter category" %}">
+                </div>
 
                 <div class="form-group mb-3">
                     <div class="input-group">
@@ -498,6 +502,10 @@
                 <label for="fitting_name">{% translate "Skill List Name" %}</label>
                 <input type="text" class="form-control" name="name" id="fitting_name" placeholder="{% translate "Enter name" %}">
                 <div class="form-text">{% translate "This will show as the name of the Skill List" %}.</div>
+            </div>
+            <div class="form-group mb-3">
+                <label for="fitting_category">{% translate "Skill List Category" %}</label>
+                <input type="text" class="form-control" name="category" id="fitting_category" placeholder="{% translate "Enter category" %}">
             </div>
         </div>
         <div class="card-footer">

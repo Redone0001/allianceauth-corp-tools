@@ -13,6 +13,16 @@ import { useTranslation } from "react-i18next";
 import { ChangeEvent } from "react";
 import { DoctrineSkillList, DoctrineSkillReqs } from "../../Components/Skills/DoctrineTypes";
 
+const UNCATEGORIZED_CATEGORY = "__uncategorized__";
+
+type CategoryOption = {
+  value: string;
+  label: string;
+};
+
+const categoryFilterValue = (category?: string | null) =>
+  category?.trim() || UNCATEGORIZED_CATEGORY;
+
 const CharacterDoctrine = () => {
   const { t } = useTranslation();
 
@@ -20,11 +30,42 @@ const CharacterDoctrine = () => {
   const [filter, setDoctrineFilter] = useState("");
   const [hideFailures, setHideFailures] = useState(false);
   const [hideCompletedPerc, setCompletedPerc] = useState(0);
+  const [categoryFilters, setCategoryFilters] = useState<string[]>([]);
   const { data } = useQuery({
     queryKey: ["doctrines", characterID],
     queryFn: () => getAccountDoctrines(Number(characterID)),
     refetchOnWindowFocus: false,
   });
+
+  const categoryOptions =
+    data
+      ?.flatMap((char: components["schemas"]["CharacterDoctrines"]) =>
+        (Object.values(char.doctrines) as DoctrineSkillReqs[])
+          .map((doctrine) => categoryFilterValue(doctrine._meta?.category)),
+      )
+      .filter((category, index, categories) => categories.indexOf(category) === index)
+      .sort((a, b) => {
+        if (a === UNCATEGORIZED_CATEGORY) return 1;
+        if (b === UNCATEGORIZED_CATEGORY) return -1;
+        return a.localeCompare(b);
+      })
+      .map((category) => ({
+        value: category,
+        label: category === UNCATEGORIZED_CATEGORY ? t("Other") : category,
+      })) ?? [];
+
+  const doctrineMatchesFilters = (name: string, doctrine: DoctrineSkillReqs) => {
+    const completedPercent = Math.floor(
+      (doctrine?._meta?.trained_sp / doctrine?._meta?.total_sp) * 100,
+    );
+    const category = categoryFilterValue(doctrine._meta?.category);
+    return (
+      (!hideFailures || Object.entries(doctrine).length === 1) &&
+      completedPercent >= hideCompletedPerc &&
+      (filter.length == 0 || name.toLowerCase().includes(filter.toLocaleLowerCase())) &&
+      (categoryFilters.length === 0 || categoryFilters.includes(category))
+    );
+  };
 
   return (
     <>
@@ -125,6 +166,34 @@ const CharacterDoctrine = () => {
           />
           <Form.Label className="ms-2">{hideCompletedPerc} %</Form.Label>
         </div>
+        {categoryOptions.length > 0 && (
+          <div
+            className="d-flex flex-row align-items-start text-nowrap w-100"
+            style={{ maxWidth: "650px" }}
+          >
+            <Form.Label className="me-2 mb-0 pt-1">{t("Category Filter")}</Form.Label>
+            <div className="d-flex flex-wrap gap-2">
+              {categoryOptions.map((category: CategoryOption) => (
+                <Form.Check
+                  key={category.value}
+                  type="checkbox"
+                  id={`category-filter-${category.value}`}
+                  label={category.label}
+                  checked={categoryFilters.includes(category.value)}
+                  onChange={(event: ChangeEvent<HTMLInputElement>) => {
+                    setCategoryFilters((filters) =>
+                      event.target.checked
+                        ? filters.includes(category.value)
+                          ? filters
+                          : [...filters, category.value]
+                        : filters.filter((value) => value !== category.value),
+                    );
+                  }}
+                />
+              ))}
+            </div>
+          </div>
+        )}
       </div>
       {data ? (
         data.map((char: components["schemas"]["CharacterDoctrines"]) => {
@@ -132,13 +201,7 @@ const CharacterDoctrine = () => {
           const filtered_doctrines = (
             Object.entries(char.doctrines) as Array<[string, DoctrineSkillReqs]>
           )?.reduce((output, [k, v]) => {
-            return (
-              output ||
-              ((!hideFailures || Object.entries(v).length === 1) &&
-                Math.floor((v?._meta?.trained_sp / v?._meta?.total_sp) * 100) >=
-                  hideCompletedPerc &&
-                (filter.length == 0 || k.toLowerCase().includes(filter.toLocaleLowerCase())))
-            );
+            return output || doctrineMatchesFilters(k, v);
           }, false);
           return (
             filtered_doctrines && (
@@ -163,13 +226,8 @@ const CharacterDoctrine = () => {
                       <>
                         {(Object.entries(char.doctrines) as Array<[string, DoctrineSkillReqs]>).map(
                           ([k, v]) => {
-                            console.log(k, v);
                             return (
-                              (!hideFailures || Object.entries(v).length === 1) &&
-                              Math.floor((v?._meta?.trained_sp / v?._meta?.total_sp) * 100) >=
-                                hideCompletedPerc &&
-                              (filter.length == 0 ||
-                                k.toLowerCase().includes(filter.toLocaleLowerCase())) && (
+                              doctrineMatchesFilters(k, v) && (
                                 <DoctrineCheck
                                   name={k}
                                   skill_reqs={v}

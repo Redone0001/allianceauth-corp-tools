@@ -107,6 +107,7 @@ def valid_skills(value):
 class SkillList(models.Model):
     last_update = models.DateTimeField(auto_now=True)
     name = models.CharField(max_length=500, null=True, default=None)
+    category = models.CharField(max_length=255, null=True, blank=True, default=None)
     skill_list = models.TextField(
         null=True,
         default="",

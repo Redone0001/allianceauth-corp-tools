@@ -2,8 +2,8 @@
 // under-specified (loose `{[key: string]: unknown}`), so these shapes are
 // derived from how DoctrineCheck/DoctrineModal actually consume them.
 export type DoctrineSkillReqs = {
-  _meta: { total_sp: number; trained_sp: number };
-  [skillName: string]: number | { total_sp: number; trained_sp: number };
+  _meta: { total_sp: number; trained_sp: number; category?: string | null };
+  [skillName: string]: number | { total_sp: number; trained_sp: number; category?: string | null };
 };
 
 export type DoctrineSkillList = {
