@@ -7,8 +7,7 @@ from django.db import migrations, models
 class Migration(migrations.Migration):
 
     dependencies = [
-        ("corptools", "0130_swap_to_eve_sde"),
-        ("corptools", "0013_skilllist_category"),
+        ("corptools", "0132_merge_20260802_1654"),
         ("eve_sde", "0019_alter_dogmaattribute_name_and_more"),
     ]
 
