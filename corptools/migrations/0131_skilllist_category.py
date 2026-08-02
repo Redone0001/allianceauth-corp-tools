@@ -5,8 +5,6 @@ from django.db import migrations
 
 class Migration(migrations.Migration):
 
-    dependencies = [
-        ("corptools", "0013_skilllist_category"),
-    ]
+    dependencies = []
 
     operations = []

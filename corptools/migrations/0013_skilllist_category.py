@@ -3,6 +3,24 @@
 from django.db import migrations, models
 
 
+def add_category_field_if_missing(apps, schema_editor):
+    skill_list = apps.get_model("corptools", "SkillList")
+    table_name = skill_list._meta.db_table
+    with schema_editor.connection.cursor() as cursor:
+        existing_columns = {
+            column.name
+            for column in schema_editor.connection.introspection.get_table_description(
+                cursor, table_name
+            )
+        }
+    if "category" in existing_columns:
+        return
+
+    field = models.CharField(blank=True, default=None, max_length=255, null=True)
+    field.set_attributes_from_name("category")
+    schema_editor.add_field(skill_list, field)
+
+
 class Migration(migrations.Migration):
 
     dependencies = [
@@ -10,9 +28,24 @@ class Migration(migrations.Migration):
     ]
 
     operations = [
-        migrations.AddField(
-            model_name="skilllist",
-            name="category",
-            field=models.CharField(blank=True, default=None, max_length=255, null=True),
+        migrations.SeparateDatabaseAndState(
+            database_operations=[
+                migrations.RunPython(
+                    add_category_field_if_missing,
+                    reverse_code=migrations.RunPython.noop,
+                ),
+            ],
+            state_operations=[
+                migrations.AddField(
+                    model_name="skilllist",
+                    name="category",
+                    field=models.CharField(
+                        blank=True,
+                        default=None,
+                        max_length=255,
+                        null=True,
+                    ),
+                ),
+            ],
         ),
     ]

@@ -8,6 +8,7 @@ class Migration(migrations.Migration):
 
     dependencies = [
         ("corptools", "0132_merge_20260802_1654"),
+        ("corptools", "0013_skilllist_category"),
         ("eve_sde", "0019_alter_dogmaattribute_name_and_more"),
     ]
 
