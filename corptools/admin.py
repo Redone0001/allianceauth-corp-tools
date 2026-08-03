@@ -5,8 +5,9 @@ from solo.admin import SingletonModelAdmin
 from django import forms
 from django.apps import apps
 from django.contrib import admin
+from django.db import transaction
 from django.utils.html import format_html
-from django.utils.translation import gettext_lazy as _
+from django.utils.translation import gettext_lazy as _, ngettext
 
 from . import app_settings, models
 from .constants.assets import LOCATION_FLAG_CHOICES
@@ -450,6 +451,43 @@ class JumpCloneImplantSetFilterAdmin(AutocompleteMediaMixin, admin.ModelAdmin):
     autocomplete_fields = ["evelocation"]
     inlines = [JumpCloneImplantRequirementInline]
     list_display = ['__str__', 'include_active_clone']
+    actions = ["copy_implant_set_filters"]
+
+    @admin.action(description=_("Copy selected jump clone implant set smart filters"))
+    def copy_implant_set_filters(self, request, queryset):
+        copied_count = 0
+
+        with transaction.atomic():
+            for implant_filter in queryset.prefetch_related(
+                "evelocation",
+                "requirements__implants",
+            ):
+                copied_filter = models.JumpCloneImplantSetFilter.objects.create(
+                    name=f"{implant_filter.name[:493]} (Copy)",
+                    description=implant_filter.description,
+                    include_active_clone=implant_filter.include_active_clone,
+                )
+                copied_filter.evelocation.set(implant_filter.evelocation.all())
+
+                for requirement in implant_filter.requirements.all():
+                    copied_requirement = (
+                        models.JumpCloneImplantRequirement.objects.create(
+                            filter=copied_filter,
+                            slot=requirement.slot,
+                        )
+                    )
+                    copied_requirement.implants.set(requirement.implants.all())
+
+                copied_count += 1
+
+        self.message_user(
+            request,
+            ngettext(
+                "%d jump clone implant set smart filter was copied.",
+                "%d jump clone implant set smart filters were copied.",
+                copied_count,
+            ) % copied_count,
+        )
 
 
 class UpdateSectionFilterForm(forms.ModelForm):

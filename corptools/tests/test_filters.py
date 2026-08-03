@@ -7,6 +7,7 @@ from unittest.mock import patch
 from eve_sde import models as sde_models
 
 # Django
+from django.contrib.admin.sites import AdminSite
 from django.contrib.auth.models import Group, User
 from django.core.exceptions import ValidationError
 from django.db.models import F
@@ -24,6 +25,7 @@ from allianceauth.tests.auth_utils import AuthUtils
 
 # AA Example App
 from corptools import models as ct_models
+from corptools.admin import JumpCloneImplantSetFilterAdmin
 
 
 class TestSecGroupBotFilters(TestCase):
@@ -2489,6 +2491,49 @@ class TestSecGroupBotFilters(TestCase):
         ct_models.validate_implants_match_slot([alpha], 1)
         with self.assertRaises(ValidationError):
             ct_models.validate_implants_match_slot([beta], 1)
+
+    def test_admin_action_copies_jump_clone_implant_set_filter(self):
+        alpha = self._create_implant_type(9041, "Copied Alpha", 1)
+        beta = self._create_implant_type(9042, "Copied Beta", 2)
+        location = ct_models.EveLocation.objects.create(
+            location_id=9041,
+            location_name="Copy Test Structure",
+        )
+        implant_filter = ct_models.JumpCloneImplantSetFilter.objects.create(
+            name="Copy Test",
+            description="Copy every setting",
+            include_active_clone=False,
+        )
+        implant_filter.evelocation.add(location)
+        self._create_implant_requirement(implant_filter, 1, alpha)
+        self._create_implant_requirement(implant_filter, 2, beta)
+
+        model_admin = JumpCloneImplantSetFilterAdmin(
+            ct_models.JumpCloneImplantSetFilter,
+            AdminSite(),
+        )
+        with patch.object(model_admin, "message_user") as message_user:
+            model_admin.copy_implant_set_filters(
+                None,
+                ct_models.JumpCloneImplantSetFilter.objects.filter(
+                    pk=implant_filter.pk
+                ),
+            )
+
+        copied_filter = ct_models.JumpCloneImplantSetFilter.objects.exclude(
+            pk=implant_filter.pk
+        ).get(name="Copy Test (Copy)")
+        self.assertEqual(copied_filter.description, implant_filter.description)
+        self.assertFalse(copied_filter.include_active_clone)
+        self.assertQuerySetEqual(copied_filter.evelocation.all(), [location])
+        self.assertEqual(
+            [
+                (requirement.slot, list(requirement.implants.all()))
+                for requirement in copied_filter.requirements.all()
+            ],
+            [(1, [alpha]), (2, [beta])],
+        )
+        message_user.assert_called_once()
 
     def test_user_highest_sp(self):
         user1_audit = ct_models.CharacterAudit.objects.get(
