@@ -45,11 +45,9 @@ describe("Filter", () => {
     expect(screen.getByPlaceholderText("Search")).toBeInTheDocument();
   });
 
-  it("renders nothing for a column whose first value parses as a date", () => {
-    const { container } = render(
-      <FilterHarness data={[{ d: "2024-01-01T00:00:00Z" }]} accessorKey="d" />,
-    );
-    expect(container).toBeEmptyDOMElement();
+  it("renders the select filter when the first string value parses as a date", () => {
+    render(<FilterHarness data={[{ d: "2024-01-01T00:00:00Z" }]} accessorKey="d" />);
+    expect(screen.getByPlaceholderText("Search")).toBeInTheDocument();
   });
 });
 
