@@ -46,7 +46,12 @@ describe("Filter", () => {
   });
 
   it("renders the select filter when the first string value parses as a date", () => {
-    render(<FilterHarness data={[{ d: "2024-01-01T00:00:00Z" }]} accessorKey="d" />);
+    render(
+      <FilterHarness
+        data={[{ d: "Inherent Implants 'Squire' Power Grid Management EG-602" }]}
+        accessorKey="d"
+      />,
+    );
     expect(screen.getByPlaceholderText("Search")).toBeInTheDocument();
   });
 });
