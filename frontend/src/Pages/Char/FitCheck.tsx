@@ -40,12 +40,12 @@ const CharacterFitCheck = () => {
   }
   return (
     <>
-      <h5 className="text-center">Fitting to Check</h5>
+      <h5 className="text-center">{t("Fitting to Check")}</h5>
       <div className="d-flex justify-content-center align-items-center flex-column">
         <div className="w-100 mb-3" style={{ maxWidth: "650px" }}>
           <Form.Control onChange={fitUpdate} as="textarea" rows={10} />
           <Button className="w-100" onClick={fetchUpdate}>
-            Check
+            {t("Check")}
           </Button>
         </div>
       </div>
@@ -55,7 +55,7 @@ const CharacterFitCheck = () => {
           <tr className="row align-items-center">
             <td className="col align-items-center text-end">
               <DoctrineCheck
-                name="Passed"
+                name={t("Passed")}
                 skill_reqs={{
                   _meta: {
                     total_sp: 100,
@@ -99,7 +99,7 @@ const CharacterFitCheck = () => {
           <tr className="row align-items-center">
             <td className="col align-items-center text-end">
               <DoctrineCheck
-                name="Failed"
+                name={t("Failed")}
                 skill_reqs={{
                   _meta: {
                     total_sp: 100,
@@ -128,42 +128,50 @@ const CharacterFitCheck = () => {
 
       {!isFetching && isFetched ? (
         <>
-          <div className="d-flex flex-wrap flex-sm-wrap flex-md-nowrap justify-content-center align-items-center">
-            <div className="card text-nowrap m-1" style={{ minWidth: "350px" }}>
-              <h5 className="card-header">Required Skills</h5>
-              <div className="card-body w-auto">
-                <table className="w-100">
-                  <thead>
-                    <th>Skill</th>
-                    <th className="text-end">Level</th>
-                  </thead>
-                  <tbody>
-                    {data?.skills?.map((sk) => {
-                      return (
-                        <>
-                          <tr>
-                            <td>{sk.n}</td>
-                            <td className="text-end">{sk.l}</td>
-                          </tr>
-                        </>
-                      );
-                    })}
-                  </tbody>
-                </table>
+          <div className="row">
+            <div className="col-sm-6 col-lg-4 col-xl-3">
+              <div className="card text-nowrap m-1">
+                <h5 className="card-header">{t("Required Skills")}</h5>
+                <div className="card-body">
+                  <table className="w-100">
+                    <thead>
+                      <th>{t("Skill")}</th>
+                      <th className="text-end">{t("Level")}</th>
+                    </thead>
+                    <tbody>
+                      {data?.skills?.map((sk) => {
+                        return (
+                          <>
+                            <tr>
+                              <td>{sk.n}</td>
+                              <td className="text-end">{sk.l}</td>
+                            </tr>
+                          </>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
               </div>
             </div>
-            <div className="card m-1">
-              <h5 className="card-header">Character Checks</h5>
-              <div className="d-flex justify-content-center align-items-center flex-wrap">
-                {Object.entries(data?.chars ?? {}).map((name) => {
-                  const reqs = name[1].doctrines?.fit;
-                  if (!reqs) return <></>;
-                  return (
-                    <>
-                      <DoctrineCheck name={name[0]} skill_reqs={reqs} skill_list={name[1].skills} />
-                    </>
-                  );
-                })}
+            <div className="col-sm-6 col-lg-8 col-xl-9">
+              <div className="card m-1">
+                <h5 className="card-header">{t("Character Checks")}</h5>
+                <div className="d-flex justify-content-center align-items-center flex-wrap">
+                  {Object.entries(data?.chars ?? {}).map((name) => {
+                    const reqs = name[1].doctrines?.fit;
+                    if (!reqs) return <></>;
+                    return (
+                      <>
+                        <DoctrineCheck
+                          name={name[0]}
+                          skill_reqs={reqs}
+                          skill_list={name[1].skills}
+                        />
+                      </>
+                    );
+                  })}
+                </div>
               </div>
             </div>
           </div>

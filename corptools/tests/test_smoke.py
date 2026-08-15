@@ -20,6 +20,8 @@ Endpoints that are skipped / excluded:
 from decimal import Decimal
 
 # AA Example App
+from corptools.models.assets import CharacterAsset, CorpAsset
+from corptools.models.audits import EveLocation
 from corptools.models.interactions import MailMessage
 
 from . import CorptoolsTestCase
@@ -121,6 +123,35 @@ class TestSmokeCharacterApi(CorptoolsTestCase):
             f"/audit/api/account/{self.cid}/asset/locations")
         self.assertEqual(resp.status_code, 200)
 
+    def test_asset_locations_no_duplicate_asset_safety_entry(self):
+        # Regression test for #291: location_id 2004 (Asset Safety) used to
+        # be hardcoded into the location filter options *and* separately
+        # picked up by the loop over real EveLocation rows once one existed
+        # for it (which fetch_location_name creates whenever a character
+        # actually has assets there) - showing up twice, once as the
+        # hardcoded "AssetSafety" and once as the resolved "Asset Safety".
+        asset_safety = EveLocation.objects.create(
+            location_id=2004, location_name="Asset Safety")
+        CharacterAsset.objects.create(
+            character=self.ca1,
+            singleton=False,
+            item_id=1,
+            location_flag="AssetSafety",
+            location_id=2004,
+            location_type="other",
+            quantity=1,
+            type_id=1,
+            location_name=asset_safety,
+        )
+        resp = self.client.get(
+            f"/audit/api/account/{self.cid}/asset/locations")
+        self.assertEqual(resp.status_code, 200)
+        labels = [entry["label"] for entry in resp.json()]
+        asset_safety_entries = [
+            label for label in labels if label.lower().replace(" ", "") == "assetsafety"
+        ]
+        self.assertEqual(len(asset_safety_entries), 1)
+
     def test_asset_list(self):
         resp = self.client.get(f"/audit/api/account/{self.cid}/asset/0/list")
         self.assertEqual(resp.status_code, 200)
@@ -192,6 +223,24 @@ class TestSmokeCharacterApi(CorptoolsTestCase):
         resp = self.client.get(
             f"/audit/api/account/{self.cid}/mail/{self.mail.mail_id}")
         self.assertEqual(resp.status_code, 200)
+
+    def test_mail_detail_with_no_body_and_no_esi_token(self):
+        # Regression test for #272: fetching a mail whose body hasn't been
+        # pulled yet, for a character with no usable ESI token (the fixture
+        # here has none), used to crash with AttributeError: 'bool' object
+        # has no attribute 'body' - update_character_mail_body returns False
+        # rather than the MailMessage when there's no token, and that False
+        # was clobbering the local `msg` before it got used again.
+        empty_mail = MailMessage.objects.create(
+            id_key=99998,
+            character=self.ca1,
+            mail_id=2,
+            body=None,
+        )
+        resp = self.client.get(
+            f"/audit/api/account/{self.cid}/mail/{empty_mail.mail_id}")
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(resp.json()["body"], "")
 
     def test_notifications(self):
         resp = self.client.get(f"/audit/api/account/{self.cid}/notifications")
@@ -270,6 +319,33 @@ class TestSmokeCorporationApi(CorptoolsTestCase):
             f"/audit/api/corporation/{self.corp_id}/asset/locations"
         )
         self.assertEqual(resp.status_code, 200)
+
+    def test_corporation_asset_locations_no_duplicate_asset_safety_entry(self):
+        # Same fix as the character-side test above (#291), for the
+        # corporation asset locations endpoint which had an identical
+        # copy-pasted hardcoded entry.
+        asset_safety = EveLocation.objects.create(
+            location_id=2004, location_name="Asset Safety")
+        CorpAsset.objects.create(
+            corporation=self.cp1,
+            singleton=False,
+            item_id=1,
+            location_flag="AssetSafety",
+            location_id=2004,
+            location_type="other",
+            quantity=1,
+            type_id=1,
+            location_name=asset_safety,
+        )
+        resp = self.client.get(
+            f"/audit/api/corporation/{self.corp_id}/asset/locations"
+        )
+        self.assertEqual(resp.status_code, 200)
+        labels = [entry["label"] for entry in resp.json()]
+        asset_safety_entries = [
+            label for label in labels if label.lower().replace(" ", "") == "assetsafety"
+        ]
+        self.assertEqual(len(asset_safety_entries), 1)
 
     def test_corporation_asset_list(self):
         resp = self.client.get(
