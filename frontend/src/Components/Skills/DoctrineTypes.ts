@@ -1,9 +1,16 @@
 // The backend's OpenAPI schema for CharacterDoctrines.doctrines/skills is
 // under-specified (loose `{[key: string]: unknown}`), so these shapes are
 // derived from how DoctrineCheck/DoctrineModal actually consume them.
+export type DoctrineMetadata = {
+  total_sp: number;
+  trained_sp: number;
+  category?: string | null;
+  required_skills?: Record<string, number>;
+};
+
 export type DoctrineSkillReqs = {
-  _meta: { total_sp: number; trained_sp: number; category?: string | null };
-  [skillName: string]: number | { total_sp: number; trained_sp: number; category?: string | null };
+  _meta: DoctrineMetadata;
+  [skillName: string]: number | DoctrineMetadata;
 };
 
 export type DoctrineSkillList = {

@@ -79,6 +79,18 @@ class TestSkillListCache(CorptoolsTestCase):
 
         self.assertIsInstance(result, str)
 
+    def test_skill_list_hash_changes_with_requirements(self):
+        cache = SkillListCache()
+
+        first = cache._get_skill_list_hash([
+            ("Tackle", "Fleet", '{"Afterburner": 1}'),
+        ])
+        second = cache._get_skill_list_hash([
+            ("Tackle", "Fleet", '{"Afterburner": 2}'),
+        ])
+
+        self.assertNotEqual(first, second)
+
     def test_check_skill_lists_includes_category_metadata(self):
         group = sde_models.ItemGroup.objects.create(id=99, name="TestGroup")
         skill_type = sde_models.ItemType.objects.create(
@@ -113,10 +125,10 @@ class TestSkillListCache(CorptoolsTestCase):
             [self.char1.character_id],
         )
 
-        self.assertEqual(
-            result[self.char1.character_name]["doctrines"]["Tackle"]["_meta"]["category"],
-            "Fleet",
-        )
+        metadata = result[self.char1.character_name]["doctrines"]["Tackle"]["_meta"]
+
+        self.assertEqual(metadata["category"], "Fleet")
+        self.assertEqual(metadata["required_skills"], {"Afterburner": 1})
 
 
 class TestValidSkillsValidator(TestCase):

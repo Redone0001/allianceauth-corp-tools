@@ -37,6 +37,20 @@ describe("DoctrineCheck", () => {
     expect(screen.queryByTestId("doctrine-modal")).not.toBeInTheDocument();
   });
 
+  it("makes a completed skill list inspectable when all requirements are available", () => {
+    const skill_reqs = {
+      _meta: {
+        trained_sp: 100,
+        total_sp: 100,
+        required_skills: { Navigation: 5 },
+      },
+    };
+
+    render(<DoctrineCheck name="Rifter" skill_reqs={skill_reqs} skill_list={{}} />);
+
+    expect(screen.getByTestId("doctrine-modal")).toBeInTheDocument();
+  });
+
   it("shows the warning variant and no copy button when unmet requirements are all alpha-trainable", () => {
     const skill_reqs = {
       _meta: { trained_sp: 50, total_sp: 100 },

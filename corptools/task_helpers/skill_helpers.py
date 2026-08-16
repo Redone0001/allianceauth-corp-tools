@@ -16,6 +16,7 @@ from allianceauth.authentication.models import CharacterOwnership
 SKILL_CACHE_TIMEOUT_SECONDS = 60 * 60 * 24 * 7  # 48h
 SKILL_CACHE_HEADERS_KEY = "CT_SKILL_HEADER"
 SKILL_CACHE_USER_KEY = "SKILL_LISTS_{}"
+SKILL_CACHE_SCHEMA_VERSION = 2
 
 
 class SkillListCache():
@@ -27,7 +28,9 @@ class SkillListCache():
         return SKILL_CACHE_USER_KEY.format(self._get_chars_hash(characters))
 
     def _get_skill_list_hash(self, skills):
-        return md5(",".join(sorted(str(x) for x in skills)).encode()).hexdigest()
+        values = [str(SKILL_CACHE_SCHEMA_VERSION)]
+        values.extend(sorted(str(x) for x in skills))
+        return md5(",".join(values).encode()).hexdigest()
 
     def get_and_cache_users(self, users):
         from ..models import SkillList  # TODO fix the recursive import
@@ -36,7 +39,7 @@ class SkillListCache():
             'user_id', 'character__character_name', 'character__character_id')
         skill_lists = SkillList.objects.all().order_by('order_weight', 'name')
         skill_list_hash = self._get_skill_list_hash(
-            skill_lists.values_list('name', 'category'))
+            skill_lists.values_list('name', 'category', 'skill_list'))
         cached_header = cache.get(SKILL_CACHE_HEADERS_KEY, False)
         skill_lists_up_to_date = cached_header == skill_list_hash
 
@@ -129,15 +132,18 @@ class SkillListCache():
         for char in skill_tables:
             skill_tables[char]["doctrines"] = {}
             for d_name, d_list in skill_list_base.items():
+                required_skills = {
+                    skill: int(level) for skill, level in d_list.items()
+                }
                 skill_tables[char]["doctrines"][d_name] = {
                     "_meta": {
                         "total_sp": 0,
                         "trained_sp": 0,
-                        "category": skill_list_categories.get(d_name)
+                        "category": skill_list_categories.get(d_name),
+                        "required_skills": required_skills,
                     }
                 }
-                for skill, level in d_list.items():
-                    level = int(level)
+                for skill, level in required_skills.items():
                     trained_skill = skill_tables[char]["skills"].get(skill, {})
                     skill_sp = all_skill_sp[d_name].get(skill, 0)
                     skill_tables[char]["doctrines"][d_name]["_meta"]["total_sp"] += skill_sp
@@ -168,7 +174,7 @@ class SkillListCache():
         skill_lists = SkillList.objects.all().order_by('order_weight', 'name')
 
         skill_list_hash = self._get_skill_list_hash(
-            skill_lists.values_list('name', 'category')
+            skill_lists.values_list('name', 'category', 'skill_list')
         )
 
         account_key = self._build_account_cache_key(linked_characters)

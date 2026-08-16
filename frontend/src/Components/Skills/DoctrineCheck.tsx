@@ -20,6 +20,9 @@ export const DoctrineCheck = ({
     return <></>;
   }
   const completed = Object.entries(_skill_reqs)?.length === 0;
+  const requiredSkills =
+    _meta.required_skills ?? (_skill_reqs as Record<string, number>);
+  const hasDetails = Object.keys(requiredSkills).length > 0;
   let style = completed ? { variant: "success" } : { variant: "danger" };
 
   const alpha_check = Object.entries(_skill_reqs)?.reduce((o, [k, v]) => {
@@ -43,7 +46,7 @@ export const DoctrineCheck = ({
       <>
         <div className="m-2">
           <ButtonGroup>
-            <Button {...style} size="sm" onClick={() => setShow(true)}>
+            <Button {...style} size="sm" onClick={() => hasDetails && setShow(true)}>
               {name}
               {completed ? (
                 <></>
@@ -74,9 +77,10 @@ export const DoctrineCheck = ({
               </Button>
             )}
           </ButtonGroup>
-          {!completed ? (
+          {hasDetails ? (
             <DoctrineModal
               skill_reqs={_skill_reqs as Record<string, number>}
+              all_skill_reqs={_meta.required_skills}
               {...{ show, setShow, name, skill_list }}
             />
           ) : (

@@ -60,13 +60,20 @@ const CharacterFitCheck = () => {
                   _meta: {
                     total_sp: 100,
                     trained_sp: 100,
+                    required_skills: { "Some Trained Skill": 5 },
                   },
                 }}
-                skill_list={{}}
+                skill_list={{
+                  "Some Trained Skill": { active_level: 5, trained_level: 5 },
+                }}
               />
             </td>
             <td className="col align-items-center">
-              <p className="m-0">{t("All Skills Trained")}</p>
+              <p className="m-0">
+                {t("All Skills Trained")}
+                <br />
+                {t("Click to Show More")}
+              </p>
             </td>
           </tr>
           <tr className="row align-items-center">

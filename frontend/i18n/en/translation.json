@@ -442,5 +442,8 @@
   "No characters found.": "No characters found.",
   "No Bridges Found": "No Bridges Found",
   "Last polled from ESI": "Last polled from ESI",
-  "Last time data changed": "Last time data changed"
+  "Last time data changed": "Last time data changed",
+  "Show Trained Skills": "Show Trained Skills",
+  "Other": "Other",
+  "Category Filter": "Category Filter"
 }
