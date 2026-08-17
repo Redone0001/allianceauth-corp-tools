@@ -19,7 +19,14 @@ from corptools.models.interactions import (
     CharacterTitle,
     LoyaltyPoint,
 )
-from corptools.models.skills import Skill, SkillList, SkillTotalHistory, valid_skills
+from corptools.models.skills import (
+    Skill,
+    SkillList,
+    SkillListCategory,
+    SkillTotalHistory,
+    parse_skill_list_categories,
+    valid_skills,
+)
 from corptools.task_helpers.skill_helpers import SkillListCache
 
 from . import CorptoolsTestCase
@@ -70,11 +77,31 @@ class TestSkillListStr(CorptoolsTestCase):
         self.assertIn("5", result)
 
 
+class TestSkillListCategories(CorptoolsTestCase):
+    def test_parse_categories_normalizes_and_deduplicates_names(self):
+        result = parse_skill_list_categories([
+            " Fleet, PvP ",
+            "Fleet",
+            "Industry",
+        ])
+
+        self.assertEqual(result, ["Fleet", "PvP", "Industry"])
+
+    def test_set_category_names_replaces_existing_categories(self):
+        skill_list = SkillList.objects.create(name="Tackle", skill_list="{}")
+        old_category = SkillListCategory.objects.create(name="Old")
+        skill_list.categories.add(old_category)
+
+        skill_list.set_category_names("Fleet, PvP")
+
+        self.assertEqual(skill_list.get_category_names(), ["Fleet", "PvP"])
+
+
 class TestSkillListCache(CorptoolsTestCase):
-    def test_skill_list_hash_handles_duplicate_names_with_blank_category(self):
+    def test_skill_list_hash_handles_duplicate_names_with_blank_categories(self):
         result = SkillListCache()._get_skill_list_hash([
-            ("Tackle", None),
-            ("Tackle", "Fleet"),
+            ("Tackle", ()),
+            ("Tackle", ("Fleet",)),
         ])
 
         self.assertIsInstance(result, str)
@@ -83,15 +110,27 @@ class TestSkillListCache(CorptoolsTestCase):
         cache = SkillListCache()
 
         first = cache._get_skill_list_hash([
-            ("Tackle", "Fleet", '{"Afterburner": 1}'),
+            ("Tackle", ("Fleet", "PvP"), '{"Afterburner": 1}'),
         ])
         second = cache._get_skill_list_hash([
-            ("Tackle", "Fleet", '{"Afterburner": 2}'),
+            ("Tackle", ("Fleet", "PvP"), '{"Afterburner": 2}'),
         ])
 
         self.assertNotEqual(first, second)
 
-    def test_check_skill_lists_includes_category_metadata(self):
+    def test_skill_list_hash_changes_with_categories(self):
+        cache = SkillListCache()
+
+        first = cache._get_skill_list_hash([
+            ("Tackle", ("Fleet",), '{"Afterburner": 1}'),
+        ])
+        second = cache._get_skill_list_hash([
+            ("Tackle", ("Fleet", "PvP"), '{"Afterburner": 1}'),
+        ])
+
+        self.assertNotEqual(first, second)
+
+    def test_check_skill_lists_includes_categories_metadata(self):
         group = sde_models.ItemGroup.objects.create(id=99, name="TestGroup")
         skill_type = sde_models.ItemType.objects.create(
             id=99, name="Afterburner", published=True, group=group)
@@ -116,9 +155,9 @@ class TestSkillListCache(CorptoolsTestCase):
         )
         skill_list = SkillList.objects.create(
             name="Tackle",
-            category="Fleet",
             skill_list='{"Afterburner": 1}',
         )
+        skill_list.set_category_names(["PvP", "Fleet"])
 
         result = SkillListCache().check_skill_lists(
             [skill_list],
@@ -127,7 +166,7 @@ class TestSkillListCache(CorptoolsTestCase):
 
         metadata = result[self.char1.character_name]["doctrines"]["Tackle"]["_meta"]
 
-        self.assertEqual(metadata["category"], "Fleet")
+        self.assertEqual(metadata["categories"], ["Fleet", "PvP"])
         self.assertEqual(metadata["required_skills"], {"Afterburner": 1})
 
 

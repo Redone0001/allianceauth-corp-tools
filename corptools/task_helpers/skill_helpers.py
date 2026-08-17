@@ -16,7 +16,7 @@ from allianceauth.authentication.models import CharacterOwnership
 SKILL_CACHE_TIMEOUT_SECONDS = 60 * 60 * 24 * 7  # 48h
 SKILL_CACHE_HEADERS_KEY = "CT_SKILL_HEADER"
 SKILL_CACHE_USER_KEY = "SKILL_LISTS_{}"
-SKILL_CACHE_SCHEMA_VERSION = 2
+SKILL_CACHE_SCHEMA_VERSION = 3
 
 
 class SkillListCache():
@@ -32,14 +32,21 @@ class SkillListCache():
         values.extend(sorted(str(x) for x in skills))
         return md5(",".join(values).encode()).hexdigest()
 
+    def _get_skill_list_hash_data(self, skill_lists):
+        return [
+            (skill_list.name, tuple(skill_list.get_category_names()), skill_list.skill_list)
+            for skill_list in skill_lists
+        ]
+
     def get_and_cache_users(self, users):
         from ..models import SkillList  # TODO fix the recursive import
 
         linked_characters = CharacterOwnership.objects.filter(user__in=users).values(
             'user_id', 'character__character_name', 'character__character_id')
-        skill_lists = SkillList.objects.all().order_by('order_weight', 'name')
+        skill_lists = SkillList.objects.prefetch_related(
+            'categories').order_by('order_weight', 'name')
         skill_list_hash = self._get_skill_list_hash(
-            skill_lists.values_list('name', 'category', 'skill_list'))
+            self._get_skill_list_hash_data(skill_lists))
         cached_header = cache.get(SKILL_CACHE_HEADERS_KEY, False)
         skill_lists_up_to_date = cached_header == skill_list_hash
 
@@ -127,7 +134,7 @@ class SkillListCache():
                     pass
 
             skill_list_base[skl.name] = _s
-            skill_list_categories[skl.name] = skl.category
+            skill_list_categories[skl.name] = skl.get_category_names()
 
         for char in skill_tables:
             skill_tables[char]["doctrines"] = {}
@@ -139,7 +146,7 @@ class SkillListCache():
                     "_meta": {
                         "total_sp": 0,
                         "trained_sp": 0,
-                        "category": skill_list_categories.get(d_name),
+                        "categories": skill_list_categories.get(d_name, []),
                         "required_skills": required_skills,
                     }
                 }
@@ -171,10 +178,11 @@ class SkillListCache():
             flat=True
         )
 
-        skill_lists = SkillList.objects.all().order_by('order_weight', 'name')
+        skill_lists = SkillList.objects.prefetch_related(
+            'categories').order_by('order_weight', 'name')
 
         skill_list_hash = self._get_skill_list_hash(
-            skill_lists.values_list('name', 'category', 'skill_list')
+            self._get_skill_list_hash_data(skill_lists)
         )
 
         account_key = self._build_account_cache_key(linked_characters)

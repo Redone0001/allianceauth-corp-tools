@@ -12,6 +12,22 @@ from django.utils.translation import gettext_lazy as _
 from .audits import CharacterAudit
 
 
+def parse_skill_list_categories(values):
+    """Return normalized, de-duplicated category names from form input."""
+    if isinstance(values, str):
+        values = [values]
+
+    categories = []
+    seen = set()
+    for value in values or []:
+        for category in value.split(","):
+            category = category.strip()
+            if category and category not in seen:
+                categories.append(category)
+                seen.add(category)
+    return categories
+
+
 class SkillTotals(models.Model):
     character = models.OneToOneField(CharacterAudit, on_delete=models.CASCADE)
 
@@ -104,10 +120,25 @@ def valid_skills(value):
         )
 
 
+class SkillListCategory(models.Model):
+    name = models.CharField(max_length=255, unique=True)
+
+    class Meta:
+        ordering = ["name"]
+        verbose_name_plural = "Skill list categories"
+
+    def __str__(self):
+        return self.name
+
+
 class SkillList(models.Model):
     last_update = models.DateTimeField(auto_now=True)
     name = models.CharField(max_length=500, null=True, default=None)
-    category = models.CharField(max_length=255, null=True, blank=True, default=None)
+    categories = models.ManyToManyField(
+        SkillListCategory,
+        blank=True,
+        related_name="skill_lists",
+    )
     skill_list = models.TextField(
         null=True,
         default="",
@@ -118,6 +149,18 @@ class SkillList(models.Model):
 
     def get_skills(self):
         return json.loads(self.skill_list)
+
+    def get_category_names(self):
+        if not self.pk:
+            return []
+        return sorted(category.name for category in self.categories.all())
+
+    def set_category_names(self, values):
+        categories = [
+            SkillListCategory.objects.get_or_create(name=name)[0]
+            for name in parse_skill_list_categories(values)
+        ]
+        self.categories.set(categories)
 
     def __str__(self):
         return "({}){} (Updated: {})".format(self.order_weight, self.name, self.last_update.strftime("%Y-%m-%d %H:%M:%S"))

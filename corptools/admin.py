@@ -152,11 +152,24 @@ class CorporationWalletJournalEntryAdmin(admin.ModelAdmin):
     )
 
 
+@admin.register(models.SkillListCategory)
+class SkillListCategoryAdmin(admin.ModelAdmin):
+    search_fields = ['name']
+
+
 @admin.register(models.SkillList)
 class SkillListAdmin(admin.ModelAdmin):
-    list_display = ['order_weight', 'name', 'category', 'last_update']
-    list_filter = ['category']
-    search_fields = ['name', 'category', 'skill_list', ]
+    autocomplete_fields = ['categories']
+    list_display = ['order_weight', 'name', '_categories', 'last_update']
+    list_filter = ['categories']
+    search_fields = ['name', 'categories__name', 'skill_list', ]
+
+    @admin.display(description='Categories')
+    def _categories(self, obj):
+        return ", ".join(obj.get_category_names())
+
+    def get_queryset(self, request):
+        return super().get_queryset(request).prefetch_related('categories')
 
 
 @admin.register(models.MapJumpBridge)

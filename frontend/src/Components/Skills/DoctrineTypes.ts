@@ -4,7 +4,7 @@
 export type DoctrineMetadata = {
   total_sp: number;
   trained_sp: number;
-  category?: string | null;
+  categories?: string[];
   required_skills?: Record<string, number>;
 };
 

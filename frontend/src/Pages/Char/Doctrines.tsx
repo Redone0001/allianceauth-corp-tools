@@ -20,8 +20,12 @@ type CategoryOption = {
   label: string;
 };
 
-const categoryFilterValue = (category?: string | null) =>
-  category?.trim() || UNCATEGORIZED_CATEGORY;
+const categoryFilterValues = (categories?: string[]) => {
+  const normalized = [
+    ...new Set(categories?.map((category) => category.trim()).filter(Boolean)),
+  ];
+  return normalized.length > 0 ? normalized : [UNCATEGORIZED_CATEGORY];
+};
 
 const CharacterDoctrine = () => {
   const { t } = useTranslation();
@@ -41,7 +45,7 @@ const CharacterDoctrine = () => {
     data
       ?.flatMap((char: components["schemas"]["CharacterDoctrines"]) =>
         (Object.values(char.doctrines) as DoctrineSkillReqs[])
-          .map((doctrine) => categoryFilterValue(doctrine._meta?.category)),
+          .flatMap((doctrine) => categoryFilterValues(doctrine._meta?.categories)),
       )
       .filter((category, index, categories) => categories.indexOf(category) === index)
       .sort((a, b) => {
@@ -58,12 +62,13 @@ const CharacterDoctrine = () => {
     const completedPercent = Math.floor(
       (doctrine?._meta?.trained_sp / doctrine?._meta?.total_sp) * 100,
     );
-    const category = categoryFilterValue(doctrine._meta?.category);
+    const categories = categoryFilterValues(doctrine._meta?.categories);
     return (
       (!hideFailures || Object.entries(doctrine).length === 1) &&
       completedPercent >= hideCompletedPerc &&
       (filter.length == 0 || name.toLowerCase().includes(filter.toLocaleLowerCase())) &&
-      (categoryFilters.length === 0 || categoryFilters.includes(category))
+      (categoryFilters.length === 0 ||
+        categoryFilters.every((category) => categories.includes(category)))
     );
   };
 

@@ -21,13 +21,16 @@ vi.mock("../../api/character", () => ({
         },
         doctrines: {
           Tackle: {
-            _meta: { total_sp: 100, trained_sp: 100, category: "Fleet" },
+            _meta: { total_sp: 100, trained_sp: 100, categories: ["Fleet", "PvP"] },
+          },
+          Logistics: {
+            _meta: { total_sp: 100, trained_sp: 100, categories: ["Fleet"] },
           },
           Mining: {
-            _meta: { total_sp: 100, trained_sp: 100, category: "Industry" },
+            _meta: { total_sp: 100, trained_sp: 100, categories: ["Industry"] },
           },
           Magic: {
-            _meta: { total_sp: 100, trained_sp: 100, category: null },
+            _meta: { total_sp: 100, trained_sp: 100, categories: [] },
           },
         },
         skills: {},
@@ -57,11 +60,12 @@ const renderPage = () => {
 };
 
 describe("CharacterDoctrine", () => {
-  it("filters visible doctrines by selected categories", async () => {
+  it("requires doctrines to match all selected categories", async () => {
     const user = userEvent.setup();
     renderPage();
 
     expect(await screen.findByText("Tackle")).toBeInTheDocument();
+    expect(screen.getByText("Logistics")).toBeInTheDocument();
     expect(screen.getByText("Mining")).toBeInTheDocument();
     expect(screen.getByText("Magic")).toBeInTheDocument();
 
@@ -69,22 +73,27 @@ describe("CharacterDoctrine", () => {
 
     await waitFor(() => {
       expect(screen.getByText("Tackle")).toBeInTheDocument();
+      expect(screen.getByText("Logistics")).toBeInTheDocument();
+      expect(screen.queryByText("Mining")).not.toBeInTheDocument();
+      expect(screen.queryByText("Magic")).not.toBeInTheDocument();
+    });
+
+    await user.click(screen.getByLabelText("PvP"));
+
+    await waitFor(() => {
+      expect(screen.getByText("Tackle")).toBeInTheDocument();
+      expect(screen.queryByText("Logistics")).not.toBeInTheDocument();
       expect(screen.queryByText("Mining")).not.toBeInTheDocument();
       expect(screen.queryByText("Magic")).not.toBeInTheDocument();
     });
 
     await user.click(screen.getByLabelText("Fleet"));
-
-    await waitFor(() => {
-      expect(screen.getByText("Tackle")).toBeInTheDocument();
-      expect(screen.getByText("Mining")).toBeInTheDocument();
-      expect(screen.getByText("Magic")).toBeInTheDocument();
-    });
-
+    await user.click(screen.getByLabelText("PvP"));
     await user.click(screen.getByLabelText("Other"));
 
     await waitFor(() => {
       expect(screen.queryByText("Tackle")).not.toBeInTheDocument();
+      expect(screen.queryByText("Logistics")).not.toBeInTheDocument();
       expect(screen.queryByText("Mining")).not.toBeInTheDocument();
       expect(screen.getByText("Magic")).toBeInTheDocument();
     });
