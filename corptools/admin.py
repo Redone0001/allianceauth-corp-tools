@@ -208,7 +208,8 @@ class AssetsFilterForm(forms.ModelForm):
 class assetFilterAdmin(AutocompleteMediaMixin, admin.ModelAdmin):
     form = AssetsFilterForm
     list_display = ['__str__', '_types', '_groups', '_cats',
-                    '_systems', '_constellations', '_regions', '_flags']
+                    '_systems', '_constellations', '_regions', '_flags',
+                    'exclude_main_character']
 
     def _list_2_html_w_tooltips(self, my_items: list, max_items: int) -> str:
         """converts list of strings into HTML with cutoff and tooltip"""
@@ -361,9 +362,64 @@ class CurrentShipFilterAdmin(AutocompleteMediaMixin, admin.ModelAdmin):
         return self._list_2_html_w_tooltips(my_regions, 10)
 
 
+class MiningFilterAdmin(AutocompleteMediaMixin, admin.ModelAdmin):
+    list_display = ['__str__', 'look_back_days', 'min_volume', '_types', '_groups',
+                    '_systems', '_constellations', '_regions', 'reversed_logic']
+    autocomplete_fields = ["types", "groups",
+                           "systems", "constellations", "regions"]
+
+    def _list_2_html_w_tooltips(self, my_items: list, max_items: int) -> str:
+        """converts list of strings into HTML with cutoff and tooltip"""
+        items_truncated_str = ', '.join(my_items[:max_items])
+        if not my_items:
+            result = None
+        elif len(my_items) <= max_items:
+            result = items_truncated_str
+        else:
+            items_truncated_str += ', (...)'
+            items_all_str = ', '.join(my_items)
+            result = format_html(
+                '<span data-tooltip="{}" class="tooltip">{}</span>',
+                items_all_str,
+                items_truncated_str
+            )
+        return result
+
+    @admin.display(description='types')
+    def _types(self, obj):
+        my_types = [x.name for x in obj.types.order_by('name')]
+
+        return self._list_2_html_w_tooltips(my_types, 10)
+
+    @admin.display(description='groups')
+    def _groups(self, obj):
+        my_groups = [x.name for x in obj.groups.order_by('name')]
+
+        return self._list_2_html_w_tooltips(my_groups, 10)
+
+    @admin.display(description='systems')
+    def _systems(self, obj):
+        my_systems = [x.name for x in obj.systems.order_by('name')]
+
+        return self._list_2_html_w_tooltips(my_systems, 10)
+
+    @admin.display(description='constellations')
+    def _constellations(self, obj):
+        my_constellations = [
+            x.name for x in obj.constellations.order_by('name')]
+
+        return self._list_2_html_w_tooltips(my_constellations, 10)
+
+    @admin.display(description='regions')
+    def _regions(self, obj):
+        my_regions = [x.name for x in obj.regions.order_by('name')]
+
+        return self._list_2_html_w_tooltips(my_regions, 10)
+
+
 class skillsFilterAdmin(admin.ModelAdmin):
     list_display = ['__str__', '_required_skill_lists',
-                    '_single_req_skill_lists']
+                    '_single_req_skill_lists', 'exclude_main_character']
     filter_horizontal = ["required_skill_lists",
                          "single_req_skill_lists"]
 
@@ -409,8 +465,14 @@ class skillsFilterAdmin(admin.ModelAdmin):
         )
 
 
-class TimeInCorpFilterAdmin(admin.ModelAdmin):
-    list_display = ['__str__', 'days_in_corp', "reversed_logic"]
+class TimeInCorpFilterAdmin(AutocompleteMediaMixin, admin.ModelAdmin):
+    autocomplete_fields = ["corp"]
+    list_display = ['__str__', 'days_in_corp', 'corp', "reversed_logic"]
+
+
+class PVEIskFilterAdmin(admin.ModelAdmin):
+    list_display = ['__str__', 'stat',
+                    'isk_threshold', 'look_back_days', 'reversed_logic']
 
 
 class CharacterAgeFilterAdmin(admin.ModelAdmin):
@@ -526,8 +588,12 @@ if apps.is_installed('securegroups'):
     admin.site.register(models.UpdateSectionFilter, UpdateSectionFilterAdmin)
     admin.site.register(models.TimeInCorpFilter, TimeInCorpFilterAdmin)
     admin.site.register(models.CharacterAgeFilter, CharacterAgeFilterAdmin)
+    if app_settings.CT_CHAR_WALLET_MODULE:
+        admin.site.register(models.PVEIskFilter, PVEIskFilterAdmin)
     if app_settings.CT_CHAR_ASSETS_MODULE:
         admin.site.register(models.AssetsFilter, assetFilterAdmin)
+    if app_settings.CT_CHAR_MINING_MODULE:
+        admin.site.register(models.MiningFilter, MiningFilterAdmin)
     if app_settings.CT_CHAR_LOCATIONS_MODULE:
         admin.site.register(models.CurrentShipFilter, CurrentShipFilterAdmin)
     if app_settings.CT_CHAR_SKILLS_MODULE:

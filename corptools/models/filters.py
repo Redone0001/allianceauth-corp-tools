@@ -18,7 +18,7 @@ from eve_sde.models import (
 from django.contrib.auth.models import User
 from django.core.exceptions import ObjectDoesNotExist, ValidationError
 from django.db import models
-from django.db.models import F, Max, Min
+from django.db.models import F, Max, Min, Sum
 from django.utils import timezone
 from django.utils.formats import localize
 from django.utils.translation import gettext_lazy as _
@@ -29,11 +29,14 @@ from allianceauth.authentication.models import CharacterOwnership
 from allianceauth.eveonline.models import EveAllianceInfo, EveCorporationInfo
 
 from .. import app_settings, providers
+from ..constants.wallet import PVE_GLANCE_STATS
 from .assets import CharacterAsset
 from .audits import CharacterLocation, EveLocation, check_date
 from .clones import Clone, JumpClone
 from .interactions import CharacterTitle, CorporationHistory
+from .mining import CharacterMiningLedger
 from .skills import SkillList, SkillTotals
+from .wallets import CharacterWalletJournalEntry
 
 logger = logging.getLogger(__name__)
 
@@ -261,6 +264,16 @@ class TimeInCorpFilter(FilterBase):
 
     days_in_corp = models.IntegerField(default=30)
 
+    corp = models.ForeignKey(
+        EveCorporationInfo,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        default=None,
+        help_text="If set, checks time in this specific corp's most recent stint instead of the "
+        "main's current corp. Leave blank to check the main's current corp as before."
+    )
+
     reversed_logic = models.BooleanField(
         default=False,
         help_text="If set all members less than the days in corp will pass the test."
@@ -270,14 +283,21 @@ class TimeInCorpFilter(FilterBase):
         logic = self.reversed_logic
         try:
             main_character = user.profile.main_character.characteraudit
-            histories = CorporationHistory.objects.filter(
-                character=main_character
-            ).order_by('-start_date').first()
+
+            if self.corp:
+                histories = CorporationHistory.objects.filter(
+                    character=main_character,
+                    corporation_id=self.corp.corporation_id,
+                ).order_by('-start_date').first()
+            else:
+                histories = CorporationHistory.objects.filter(
+                    character=main_character
+                ).order_by('-start_date').first()
+
+                if main_character.character.corporation_id != histories.corporation_id:
+                    return False  # FAIL if history is no god from CCP.
 
             days = timezone.now() - histories.start_date
-
-            if main_character.character.corporation_id != histories.corporation_id:
-                return False  # FAIL if history is no god from CCP.
 
             if days.days >= self.days_in_corp:
                 return not logic
@@ -289,10 +309,19 @@ class TimeInCorpFilter(FilterBase):
 
     def audit_filter(self, users):
         logic = self.reversed_logic
-        histories = CorporationHistory.objects.filter(
-            character__character_id__in=users.values_list(
-                "profile__main_character", flat=True)
-        ).values(uid=F("character__character__character_ownership__user_id")).annotate(
+        char_ids = users.values_list("profile__main_character", flat=True)
+
+        if self.corp:
+            base_histories = CorporationHistory.objects.filter(
+                character__character_id__in=char_ids,
+                corporation_id=self.corp.corporation_id,
+            )
+        else:
+            base_histories = CorporationHistory.objects.filter(
+                character__character_id__in=char_ids,
+            )
+
+        histories = base_histories.values(uid=F("character__character__character_ownership__user_id")).annotate(
             max_id=Max("record_id"),
         )
         # pull the specific histories
@@ -307,7 +336,7 @@ class TimeInCorpFilter(FilterBase):
 
         chars = defaultdict(lambda: {})
         for c in histories:
-            if c["ccid"] != c["rcid"]:
+            if not self.corp and c["ccid"] != c["rcid"]:
                 continue  # Skip if not main corp.
 
             if c['std']:
@@ -360,6 +389,68 @@ class TimeInCorpFilter(FilterBase):
         return output
 
 
+class PVEIskFilter(FilterBase):
+    class Meta:
+        verbose_name = "Smart Filter: PvE ISK Earned"
+        verbose_name_plural = verbose_name
+
+    stat = models.CharField(
+        max_length=20,
+        choices=[(key, key.title()) for key in PVE_GLANCE_STATS],
+        default="ratting",
+        help_text="Which glances-page PvE stat to check.",
+    )
+    isk_threshold = models.BigIntegerField(default=0)
+    look_back_days = models.IntegerField(default=30)
+
+    reversed_logic = models.BooleanField(
+        default=False,
+        help_text="If set, members who have earned LESS than the threshold will pass the test."
+    )
+
+    def _totals_queryset(self, character_ids):
+        stat_def = PVE_GLANCE_STATS[self.stat]
+        start_date = timezone.now() - datetime.timedelta(days=self.look_back_days)
+        qry = CharacterWalletJournalEntry.objects.filter(
+            character__character_id__in=character_ids,
+            ref_type__in=stat_def["ref_types"],
+            date__gte=start_date,
+        )
+        if stat_def["first_parties"]:
+            qry = qry.filter(first_party_id__in=stat_def["first_parties"])
+        if stat_def["minimum_amount"]:
+            qry = qry.filter(amount__gte=stat_def["minimum_amount"])
+        return qry
+
+    def process_filter(self, user: User):
+        logic = self.reversed_logic
+        try:
+            character_ids = CharacterOwnership.objects.filter(
+                user=user).values_list("character_id", flat=True)
+            total = self._totals_queryset(character_ids).aggregate(
+                total=Sum("amount"))["total"] or 0
+            return (total >= self.isk_threshold) != logic
+        except Exception as e:
+            logger.error(e, exc_info=1)
+            return False != logic
+
+    def audit_filter(self, users):
+        character_ids = CharacterOwnership.objects.filter(
+            user__in=users).values_list("character_id", flat=True)
+        totals = self._totals_queryset(character_ids).values(
+            uid=F("character__character__character_ownership__user_id")
+        ).annotate(total=Sum("amount"))
+        by_user = {t["uid"]: t["total"] or 0 for t in totals}
+
+        output = defaultdict(
+            lambda: {"message": "", "check": False != self.reversed_logic})
+        for u in users:
+            total = by_user.get(u.id, 0)
+            check = (total >= self.isk_threshold) != self.reversed_logic
+            output[u.id] = {"message": f"{total:,} ISK", "check": check}
+        return output
+
+
 class AssetsFilter(FilterBase):
     class Meta:
         verbose_name = "Smart Filter: Assets in Locations"
@@ -409,8 +500,18 @@ class AssetsFilter(FilterBase):
         help_text="Negate the value of the filter, i.e. check for absence of assets"
     )
 
+    exclude_main_character = models.BooleanField(
+        default=False,
+        help_text="If set, each user's main character is ignored - only alts are checked."
+    )
+
     def filter_query(self, users):
         character_list = CharacterOwnership.objects.filter(user__in=users)
+        if self.exclude_main_character:
+            character_list = character_list.exclude(
+                character__character_id=models.F(
+                    "user__profile__main_character__character_id")
+            )
         types = list(self.types.all())
         groups = list(self.groups.all())
         categories = list(self.categories.all())
@@ -508,6 +609,152 @@ class AssetsFilter(FilterBase):
             else:
                 output[u.id] = {"message": "",
                                 "check": False != self.reversed_logic}
+        return output
+
+
+class MiningFilter(FilterBase):
+    class Meta:
+        verbose_name = "Smart Filter: Mining Yield"
+        verbose_name_plural = verbose_name
+
+    # Pochven/Triglavian region id - eve_sde.models.map.POCHVEN_REGION_ID,
+    # not re-exported from eve_sde.models, so inlined here.
+    _POCHVEN_REGION_ID = 10_000_070
+
+    look_back_days = models.IntegerField(default=30)
+    min_volume = models.FloatField(
+        default=0,
+        help_text="Minimum total m3 mined (quantity x each type's unpackaged volume, across matching "
+        "ore/ice/gas types) in the look-back window."
+    )
+
+    types = models.ManyToManyField(
+        ItemType,
+        blank=True,
+        help_text="Limit to specific ore/ice/gas types. Leave blank for all types."
+    )
+    groups = models.ManyToManyField(
+        ItemGroup,
+        blank=True,
+        help_text="Limit to specific ore/ice/gas groups. Leave blank for all groups."
+    )
+
+    systems = models.ManyToManyField(
+        SolarSystem,
+        blank=True,
+        help_text="Limit filter to specific systems"
+    )
+    constellations = models.ManyToManyField(
+        Constellation,
+        blank=True,
+        help_text="Limit filter to specific constellations"
+    )
+    regions = models.ManyToManyField(
+        Region,
+        blank=True,
+        help_text="Limit filter to specific regions"
+    )
+
+    include_high_sec = models.BooleanField(default=True)
+    include_low_sec = models.BooleanField(default=True)
+    include_null_sec = models.BooleanField(default=True)
+    include_w_space = models.BooleanField(default=True)
+
+    reversed_logic = models.BooleanField(
+        default=False,
+        help_text="If set, members who mined LESS than the threshold will pass the test."
+    )
+
+    def _security_status_query(self):
+        sec_q = models.Q()
+        any_flag = False
+        if self.include_high_sec:
+            sec_q |= models.Q(system__security_status__gte=0.45)
+            any_flag = True
+        if self.include_low_sec:
+            sec_q |= models.Q(
+                system__security_status__gt=0, system__security_status__lt=0.45)
+            any_flag = True
+        if self.include_w_space:
+            sec_q |= models.Q(
+                system_id__gte=31_000_000, system_id__lt=32_000_000)
+            any_flag = True
+        if self.include_null_sec:
+            sec_q |= (
+                models.Q(system__security_status__lte=0)
+                & ~models.Q(system_id__gte=31_000_000, system_id__lt=32_000_000)
+                & ~models.Q(system_id__gte=32_000_000, system_id__lt=33_000_000)
+                & ~models.Q(system__constellation__region_id=self._POCHVEN_REGION_ID)
+            )
+            any_flag = True
+        return sec_q, any_flag
+
+    def _totals_queryset(self, character_ids):
+        start_date = timezone.now() - datetime.timedelta(days=self.look_back_days)
+        qry = CharacterMiningLedger.objects.filter(
+            character__character_id__in=character_ids,
+            date__gte=start_date,
+        )
+
+        types = list(self.types.all())
+        groups = list(self.groups.all())
+        if types or groups:
+            q = models.Q()
+            if types:
+                q |= models.Q(type_name__in=types)
+            if groups:
+                q |= models.Q(type_name__group__in=groups)
+            qry = qry.filter(q)
+
+        systems = list(self.systems.all())
+        constellations = list(self.constellations.all())
+        regions = list(self.regions.all())
+        if systems or constellations or regions:
+            q = models.Q()
+            if systems:
+                q |= models.Q(system__in=systems)
+            if constellations:
+                q |= models.Q(system__constellation__in=constellations)
+            if regions:
+                q |= models.Q(system__constellation__region__in=regions)
+            qry = qry.filter(q)
+
+        sec_q, any_flag = self._security_status_query()
+        if any_flag:
+            qry = qry.filter(sec_q)
+        else:
+            qry = qry.none()
+
+        return qry.annotate(
+            volume_yield=F("quantity") * F("type_name__volume")
+        )
+
+    def process_filter(self, user: User):
+        logic = self.reversed_logic
+        try:
+            character_ids = CharacterOwnership.objects.filter(
+                user=user).values_list("character_id", flat=True)
+            total = self._totals_queryset(character_ids).aggregate(
+                total=Sum("volume_yield"))["total"] or 0
+            return (total >= self.min_volume) != logic
+        except Exception as e:
+            logger.error(e, exc_info=1)
+            return False != logic
+
+    def audit_filter(self, users):
+        character_ids = CharacterOwnership.objects.filter(
+            user__in=users).values_list("character_id", flat=True)
+        totals = self._totals_queryset(character_ids).values(
+            uid=F("character__character__character_ownership__user_id")
+        ).annotate(total=Sum("volume_yield"))
+        by_user = {t["uid"]: t["total"] or 0 for t in totals}
+
+        output = defaultdict(
+            lambda: {"message": "", "check": False != self.reversed_logic})
+        for u in users:
+            total = by_user.get(u.id, 0)
+            check = (total >= self.min_volume) != self.reversed_logic
+            output[u.id] = {"message": f"{total:,.1f} m3", "check": check}
         return output
 
 
@@ -659,6 +906,11 @@ class Skillfilter(FilterBase):
     single_req_skill_lists = models.ManyToManyField(
         SkillList, blank=True, related_name="single_req")
 
+    exclude_main_character = models.BooleanField(
+        default=False,
+        help_text="If set, each user's main character is ignored - only alts are checked."
+    )
+
     def process_filter(self, user: User):
         try:  # avatar 11567
             skills_list = providers.skills.get_and_cache_user(user.id)
@@ -680,13 +932,22 @@ class Skillfilter(FilterBase):
 
             skill_tables = skills_list.get("skills_list")
 
+            main_id = None
+            if self.exclude_main_character:
+                main_char = getattr(user.profile, "main_character", None)
+                main_id = main_char.character_id if main_char else None
+
             for char in skill_tables:
+                if main_id and skill_tables[char].get("character_id") == main_id:
+                    continue
                 for d_name, d_list in skill_list_base.items():
                     if len(skill_tables[char]["doctrines"][d_name]) == 1:
                         skill_list_base[d_name]['pass'] = True
             if req_one.count() > 0:
                 single_pass = False
                 for char in skill_tables:
+                    if main_id and skill_tables[char].get("character_id") == main_id:
+                        continue
                     for d_name, d_list in skill_list_single.items():
                         if len(skill_tables[char]["doctrines"][d_name]) == 1:
                             single_pass = True
@@ -713,8 +974,16 @@ class Skillfilter(FilterBase):
         if not skill_lists and not req_one:
             return output
 
+        main_ids = {}
+        if self.exclude_main_character:
+            main_ids = dict(
+                User.objects.filter(id__in=accounts.keys()).values_list(
+                    "id", "profile__main_character__character_id")
+            )
+
         for uid, u in accounts.items():
             message = []
+            main_id = main_ids.get(uid)
 
             skill_list_base = {skl.name: {'pass': False}
                                for skl in skill_lists}
@@ -724,6 +993,8 @@ class Skillfilter(FilterBase):
                 skill_tables = u['data'].get("skills_list")
 
                 for char in skill_tables:
+                    if main_id and skill_tables[char].get("character_id") == main_id:
+                        continue
                     for d_name, d_list in skill_list_base.items():
                         if len(skill_tables[char]["doctrines"][d_name]) == 1:
                             skill_list_base[d_name]['pass'] = True
@@ -732,6 +1003,8 @@ class Skillfilter(FilterBase):
                 single_pass = False
                 if req_one:
                     for char in skill_tables:
+                        if main_id and skill_tables[char].get("character_id") == main_id:
+                            continue
                         for d_name in skill_list_single:
                             if len(skill_tables[char]["doctrines"][d_name]) == 1:
                                 single_pass = True

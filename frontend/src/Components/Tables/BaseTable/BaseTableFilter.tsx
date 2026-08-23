@@ -1,7 +1,20 @@
+import { useState } from "react";
 import Styles from "./BaseTableFilter.module.css";
 import { Column, Table as ReactTable } from "@tanstack/react-table";
 import { Button, Dropdown, Form, OverlayTrigger, Popover } from "react-bootstrap";
 import { useTranslation } from "react-i18next";
+
+// Lets a column supply a nicer label for its own SelectFilter options than
+// the raw underlying value (e.g. the wallet table's ref_type column, whose
+// raw values are ESI machine keys like "bounty_prizes" - see RefTypeLabel).
+// Falls back to SelectFilter's own value.replaceAll("_", " ") when unset, so
+// every other column's filter is unaffected.
+declare module "@tanstack/react-table" {
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars -- must match the original interface's arity, not just what this augmentation itself uses
+  interface ColumnMeta<TData, TValue> {
+    filterOptionLabel?: (value: string) => string;
+  }
+}
 
 const isHTML = RegExp.prototype.test.bind(/(<([^>]+)>)/i);
 
@@ -11,8 +24,8 @@ export const NumberFilter = <TData,>({ column }: { column: Column<TData, unknown
   const fromToNumber = columnFilterValue as [string, string];
 
   const popoverNumber = (
-    <Popover id="popover-positioned-top">
-      <div className="p-3">
+    <Popover id="popover-positioned-top" className={Styles.popover}>
+      <Popover.Body>
         <input
           type="number"
           value={fromToNumber?.[0] ?? ""}
@@ -40,18 +53,13 @@ export const NumberFilter = <TData,>({ column }: { column: Column<TData, unknown
         >
           {t("Close")}
         </Button>
-      </div>
+      </Popover.Body>
     </Popover>
   );
 
   return (
     <OverlayTrigger trigger="click" placement="bottom" rootClose={true} overlay={popoverNumber}>
-      <form
-        className={Styles.searchWrapperFrom}
-        onReset={() => {
-          column.setFilterValue(() => [undefined, undefined]);
-        }}
-      >
+      <form className={Styles.searchWrapperFrom}>
         <div className={Styles.searchWrapper}>
           <Form.Control
             className={Styles.searchInput}
@@ -69,7 +77,7 @@ export const NumberFilter = <TData,>({ column }: { column: Column<TData, unknown
                       ? "∞"
                       : fromToNumber?.[1].toLocaleString()
                   }`
-                : undefined
+                : ""
             }
           />
           <svg
@@ -84,7 +92,13 @@ export const NumberFilter = <TData,>({ column }: { column: Column<TData, unknown
               d="M233.4 406.6c12.5 12.5 32.8 12.5 45.3 0l192-192c12.5-12.5 12.5-32.8 0-45.3s-32.8-12.5-45.3 0L256 338.7 86.6 169.4c-12.5-12.5-32.8-12.5-45.3 0s-12.5 32.8 0 45.3l192 192z"
             />
           </svg>
-          <button type="reset">
+          <button
+            type="button"
+            onClick={(event) => {
+              event.stopPropagation();
+              column.setFilterValue(() => [undefined, undefined]);
+            }}
+          >
             <svg
               xmlns="http://www.w3.org/2000/svg"
               fill="none"
@@ -108,8 +122,8 @@ export const BoolFilter = <TData,>({ column }: { column: Column<TData, unknown> 
   const passFail = column.getFilterValue();
 
   const popoverBool = (
-    <Popover id="popover-positioned-top">
-      <div className={`${Styles.radioWrapper} p-2`}>
+    <Popover id="popover-positioned-top" className={Styles.popover}>
+      <Popover.Body className={Styles.radioWrapper}>
         <Form.Check
           label={t("True")}
           name="group1"
@@ -136,25 +150,20 @@ export const BoolFilter = <TData,>({ column }: { column: Column<TData, unknown> 
         >
           {t("Close")}
         </Button>
-      </div>
+      </Popover.Body>
     </Popover>
   );
 
   return (
     <OverlayTrigger trigger="click" placement="bottom" rootClose={true} overlay={popoverBool}>
-      <form
-        className={Styles.searchWrapperFrom}
-        onReset={() => {
-          column.setFilterValue(() => undefined);
-        }}
-      >
+      <form className={Styles.searchWrapperFrom}>
         <div className={Styles.searchWrapper}>
           <Form.Control
             className={Styles.searchInput}
             readOnly={true}
             type="text"
             placeholder={t("Filter")}
-            value={typeof passFail === "undefined" ? undefined : passFail ? t("True") : t("False")}
+            value={typeof passFail === "undefined" ? "" : passFail ? t("True") : t("False")}
           />
           <svg
             xmlns="http://www.w3.org/2000/svg"
@@ -168,7 +177,13 @@ export const BoolFilter = <TData,>({ column }: { column: Column<TData, unknown> 
               d="M233.4 406.6c12.5 12.5 32.8 12.5 45.3 0l192-192c12.5-12.5 12.5-32.8 0-45.3s-32.8-12.5-45.3 0L256 338.7 86.6 169.4c-12.5-12.5-32.8-12.5-45.3 0s-12.5 32.8 0 45.3l192 192z"
             />
           </svg>
-          <button type="reset">
+          <button
+            type="button"
+            onClick={(event) => {
+              event.stopPropagation();
+              column.setFilterValue(() => undefined);
+            }}
+          >
             <svg
               xmlns="http://www.w3.org/2000/svg"
               fill="none"
@@ -190,48 +205,43 @@ export const BoolFilter = <TData,>({ column }: { column: Column<TData, unknown> 
 export const TextFilter = <TData,>({ column }: { column: Column<TData, unknown> }) => {
   const { t } = useTranslation();
   return (
-    <form
-      onReset={() => {
-        column.setFilterValue(null);
-      }}
-    >
-      <div className={Styles.searchWrapper}>
-        <Form.Control
-          className={Styles.searchInput}
-          type="text"
-          placeholder={t("Search")}
-          onChange={(event) => {
-            column.setFilterValue(event.target.value ? event.target.value : "");
-          }}
-        />
+    <div className={Styles.searchWrapper}>
+      <Form.Control
+        className={Styles.searchInput}
+        type="text"
+        placeholder={t("Search")}
+        value={(column.getFilterValue() as string) ?? ""}
+        onChange={(event) => {
+          column.setFilterValue(event.target.value ? event.target.value : "");
+        }}
+      />
+      <svg
+        xmlns="http://www.w3.org/2000/svg"
+        fill="none"
+        viewBox="0 0 24 24"
+        className={Styles.searchIcon}
+      >
+        <path
+          fill="currentColor"
+          fill-rule="evenodd"
+          d="M15.62 17.03a9 9 0 1 1 1.41-1.41l4.68 4.67a1 1 0 0 1-1.42 1.42l-4.67-4.68ZM17 10a7 7 0 1 1-14 0 7 7 0 0 1 14 0Z"
+          clip-rule="evenodd"
+        ></path>
+      </svg>
+      <button type="button" onClick={() => column.setFilterValue("")}>
         <svg
           xmlns="http://www.w3.org/2000/svg"
           fill="none"
           viewBox="0 0 24 24"
-          className={Styles.searchIcon}
+          className={Styles.xIcon}
         >
           <path
             fill="currentColor"
-            fill-rule="evenodd"
-            d="M15.62 17.03a9 9 0 1 1 1.41-1.41l4.68 4.67a1 1 0 0 1-1.42 1.42l-4.67-4.68ZM17 10a7 7 0 1 1-14 0 7 7 0 0 1 14 0Z"
-            clip-rule="evenodd"
+            d="M17.3 18.7a1 1 0 0 0 1.4-1.4L13.42 12l5.3-5.3a1 1 0 0 0-1.42-1.4L12 10.58l-5.3-5.3a1 1 0 0 0-1.4 1.42L10.58 12l-5.3 5.3a1 1 0 1 0 1.42 1.4L12 13.42l5.3 5.3Z"
           ></path>
         </svg>
-        <button type="reset">
-          <svg
-            xmlns="http://www.w3.org/2000/svg"
-            fill="none"
-            viewBox="0 0 24 24"
-            className={Styles.xIcon}
-          >
-            <path
-              fill="currentColor"
-              d="M17.3 18.7a1 1 0 0 0 1.4-1.4L13.42 12l5.3-5.3a1 1 0 0 0-1.42-1.4L12 10.58l-5.3-5.3a1 1 0 0 0-1.4 1.42L10.58 12l-5.3 5.3a1 1 0 1 0 1.42 1.4L12 13.42l5.3 5.3Z"
-            ></path>
-          </svg>
-        </button>
-      </div>
-    </form>
+      </button>
+    </div>
   );
 };
 
@@ -240,20 +250,40 @@ export const TextFilter = <TData,>({ column }: { column: Column<TData, unknown> 
 // }
 export const SelectFilter = <TData,>({ column }: { column: Column<TData, unknown> }) => {
   const { t } = useTranslation();
-  const sortedUniqueValues = Array.from(column.getFacetedUniqueValues().keys()).sort();
+  // The box doubles as both "what's currently applied" and "what you're
+  // typing to search/narrow the dropdown" - while idle it should show the
+  // applied value's friendly label (see labelFor below), but while the user
+  // is actively typing it needs to show their literal keystrokes (which get
+  // matched, and applied as the filter itself, against the raw values -
+  // see onChange), not a label for whatever they've typed so far.
+  const [isEditing, setIsEditing] = useState(false);
+  // Drop null/undefined up front - some columns (e.g. a contract's
+  // issuer/assignee/acceptor) are legitimately null for some rows, and a
+  // stray null here can otherwise trip isObjectorHTML below into treating
+  // every value in the column as an object, hiding the filter entirely.
+  const sortedUniqueValues = Array.from(column.getFacetedUniqueValues().keys())
+    .filter((v) => v !== null && v !== undefined)
+    .sort();
   const currentFilterValue = column.getFilterValue() as string;
   const isObjectorHTML =
     isHTML(sortedUniqueValues?.[0]) || typeof sortedUniqueValues?.[0] === "object";
 
+  const labelFor =
+    column.columnDef.meta?.filterOptionLabel ?? ((v: string) => v?.replaceAll("_", " ") ?? v);
+
   const selectOptions = (sortedUniqueValues as string[]).reduce(
     (previousValue: { value: string; label: string }[], currentValue) => {
-      if (typeof currentValue != "undefined") {
+      // Some columns (e.g. a contract's issuer/assignee/acceptor) are
+      // legitimately null for some rows - no reason to offer a "null"
+      // filter option for those, and the fallback labelFor would throw on
+      // it (`.replaceAll` on null) if it somehow got this far.
+      if (currentValue !== undefined && currentValue !== null) {
         if (!isObjectorHTML) {
           if (
             currentFilterValue === undefined ||
             currentValue?.toLowerCase().includes(currentFilterValue?.toLowerCase())
           ) {
-            previousValue.push({ value: currentValue, label: currentValue });
+            previousValue.push({ value: currentValue, label: labelFor(currentValue) });
           }
         }
       }
@@ -274,9 +304,6 @@ export const SelectFilter = <TData,>({ column }: { column: Column<TData, unknown
               {selectOptions.length > 0 ? (
                 selectOptions.map((item) => {
                   if (item?.value) {
-                    // const gaps = item?.value.split(" ").length;
-                    // const cammelCase =
-                    //   gaps === 0 ? item?.value?.match(/[A-Z][a-z]+/g)?.join(" ") : false;
                     return (
                       <Dropdown.Item
                         className={Styles.capitaliseWords}
@@ -286,8 +313,7 @@ export const SelectFilter = <TData,>({ column }: { column: Column<TData, unknown
                           document.body.click();
                         }}
                       >
-                        {/* {cammelCase ? cammelCase : item.value.replaceAll("_", " ")} */}
-                        {item.value.replaceAll("_", " ")}
+                        {item.label}
                       </Dropdown.Item>
                     );
                   }
@@ -300,18 +326,28 @@ export const SelectFilter = <TData,>({ column }: { column: Column<TData, unknown
         </Dropdown>
       }
     >
-      <form
-        className={Styles.searchWrapperFrom}
-        onReset={() => {
-          column.setFilterValue(() => undefined);
-        }}
-      >
+      <form className={Styles.searchWrapperFrom}>
         <div className={Styles.searchWrapper}>
           <Form.Control
             className={Styles.searchInput}
             type="text"
             placeholder={t("Search")}
-            value={typeof currentFilterValue === "undefined" ? undefined : currentFilterValue}
+            value={
+              typeof currentFilterValue === "undefined"
+                ? ""
+                : isEditing
+                  ? currentFilterValue
+                  : labelFor(currentFilterValue)
+            }
+            onFocus={(event) => {
+              setIsEditing(true);
+              // Selects the label text so the very next keystroke replaces
+              // it outright, rather than being inserted into the middle of
+              // (or appended after) a label that no longer corresponds to
+              // what's about to be typed.
+              event.target.select();
+            }}
+            onBlur={() => setIsEditing(false)}
             onChange={(event) => {
               column.setFilterValue(event.target.value ? event.target.value : "");
             }}
@@ -329,7 +365,14 @@ export const SelectFilter = <TData,>({ column }: { column: Column<TData, unknown
               clip-rule="evenodd"
             ></path>
           </svg>
-          <button type="reset">
+          <button
+            type="button"
+            onClick={(event) => {
+              event.stopPropagation();
+              setIsEditing(false);
+              column.setFilterValue(() => undefined);
+            }}
+          >
             <svg
               xmlns="http://www.w3.org/2000/svg"
               fill="none"

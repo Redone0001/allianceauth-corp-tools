@@ -144,7 +144,7 @@ class ListApiEndpoints:
                         "alliance_id": all_id,
                         "alliance_name": all_nm
                     },
-                    "characters": c.corporation.member_count,
+                    "characters": c.corporation.member_count or 0,
                     "active": True,
                     "last_updates": _updates
                 }

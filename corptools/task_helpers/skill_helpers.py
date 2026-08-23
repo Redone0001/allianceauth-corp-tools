@@ -14,8 +14,11 @@ from django.core.cache import cache
 from allianceauth.authentication.models import CharacterOwnership
 
 SKILL_CACHE_TIMEOUT_SECONDS = 60 * 60 * 24 * 7  # 48h
-SKILL_CACHE_HEADERS_KEY = "CT_SKILL_HEADER"
-SKILL_CACHE_USER_KEY = "SKILL_LISTS_{}"
+# Bump the "_v2" suffix on both keys whenever the cached data shape changes
+# (e.g. the "queue" list->dict change) so stale entries in the old shape are
+# orphaned instead of being served to a schema that no longer matches them.
+SKILL_CACHE_HEADERS_KEY = "CT_SKILL_HEADER_v2"
+SKILL_CACHE_USER_KEY = "SKILL_LISTS_v2_{}"
 SKILL_CACHE_SCHEMA_VERSION = 3
 
 
@@ -77,7 +80,7 @@ class SkillListCache():
 
     def check_skill_lists(self, skill_lists, linked_characters):
         # build the arrays
-        from ..models import Skill
+        from ..models import Skill, SkillQueue
 
         skills = Skill.objects.filter(
             character__character__character_id__in=linked_characters
@@ -101,7 +104,7 @@ class SkillListCache():
                     "character_id": skill.character.character.character_id,
                     "omega": True,
                     "skills": {},
-                    "queue": []
+                    "queue": {}
                 }
 
             skill_tables[char]["skills"][skill.skill_name.name_en] = {
@@ -113,6 +116,23 @@ class SkillListCache():
 
             if skill.alpha:
                 skill_tables[char]["omega"] = False
+
+        # Highest queued finish_level per skill, per character - a skill can
+        # appear multiple times in the queue for successive levels, and the
+        # doctrine check only cares about where the queue will leave it.
+        queue_entries = SkillQueue.objects.filter(
+            character__character__character_id__in=linked_characters,
+            skill_name__isnull=False,
+        ).select_related('skill_name', 'character__character')
+
+        for entry in queue_entries:
+            char = entry.character.character.character_name
+            if char not in skill_tables:
+                continue  # no trained skills at all - nothing to check against
+            skill_name = entry.skill_name.name_en
+            current = skill_tables[char]["queue"].get(skill_name, 0)
+            skill_tables[char]["queue"][skill_name] = max(
+                current, entry.finish_level)
 
         all_skill_sp = {}
         for skl in skill_lists:

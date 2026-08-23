@@ -1,7 +1,13 @@
 import { useTranslation } from "react-i18next";
 import { IconStatusDiv } from "../../Components/Cards/IconStatusCard";
 import { statusProps, COMPACT_NUM_FORMAT } from "../../Components/Cards/IconStatusCard.helpers";
-import { loadGlanceActivityData } from "../../api/character";
+import {
+  loadGlanceActivityData,
+  loadGlanceActivityHeatmapData,
+  loadGlanceRattingData,
+} from "../../api/character";
+import ActivityHeatmap from "../../Components/Graphs/ActivityHeatmap";
+import { Ratting } from "./Ratting";
 import {
   loadCorpGlanceActivityDataEco,
   loadCorpGlanceActivityDataMining,
@@ -70,7 +76,7 @@ const ActivitiesEco = ({ data, isLoading }: { data?: GlanceActivityData; isLoadi
   return (
     <Card className="m-2">
       <Card.Header className="text-center">
-        <Card.Title>{t("Economic")}</Card.Title>
+        <Card.Title>{t("Economy")}</Card.Title>
       </Card.Header>
       <div className="d-flex flex-wrap justify-content-center">
         <IconStatusDiv
@@ -134,6 +140,18 @@ const ActivitiesMining = ({
   );
 };
 
+const ActivitiesRatting = () => {
+  const { characterID } = useParams();
+
+  const { data, isLoading } = useQuery({
+    queryKey: ["glances", "ratting", characterID],
+    queryFn: () => loadGlanceRattingData(characterID ? Number(characterID) : 0),
+    refetchOnWindowFocus: false,
+  });
+
+  return <Ratting {...{ data, isLoading }} />;
+};
+
 export const CharacterGlancesActivities = () => {
   const { characterID } = useParams();
 
@@ -149,10 +167,35 @@ export const CharacterGlancesActivities = () => {
       <h3 className={`${styles.strikeOut} w-100 text-center mt-3`}>{t("Character Activity")}</h3>
       <div className="d-flex flex-wrap justify-content-center">
         <ActivitiesPVE {...{ data, isLoading }} />
+        <ActivitiesRatting />
         <ActivitiesEco {...{ data, isLoading }} />
         <ActivitiesMining {...{ data, isLoading }} />
       </div>
     </>
+  );
+};
+
+export const CharacterGlancesActivityHeatmap = () => {
+  const { characterID } = useParams();
+  const { t } = useTranslation();
+
+  const { data } = useQuery({
+    queryKey: ["glances", "activity_heatmap", characterID],
+    queryFn: () => loadGlanceActivityHeatmapData(characterID ? Number(characterID) : 0),
+    refetchOnWindowFocus: false,
+  });
+
+  if (!data || (!data.cells.length && !data.mining.length && !data.ratting.length)) return null;
+
+  return (
+    <Card className="m-2" style={{ maxWidth: "1500px", width: "100%" }}>
+      <Card.Header className="text-center">
+        <Card.Title>{t("Activity Heatmap")}</Card.Title>
+      </Card.Header>
+      <Card.Body>
+        <ActivityHeatmap data={data} />
+      </Card.Body>
+    </Card>
   );
 };
 

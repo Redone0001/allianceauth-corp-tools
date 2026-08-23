@@ -1,10 +1,15 @@
 import { useTranslation } from "react-i18next";
 import ErrorBoundary from "../../Components/Helpers/ErrorBoundary";
-import { SelectFilter } from "../../Components/Helpers/SelectFilter";
+import { NativeSelectFilter } from "../../Components/Helpers/NativeSelectFilter";
 import { TextFilter } from "../../Components/Helpers/TextFilter";
 import { ErrorLoader, PanelLoader } from "../../Components/Loaders/loaders";
 import CharSkillGroups from "../../Components/Skills/CharacterSkills";
-import { getCharacterSkills } from "../../api/character";
+import { SkillBlockKey } from "../../Components/Skills/SkillBlockKey";
+import {
+  getCharacterSkillQueues,
+  getCharacterSkills,
+  loadCharacterStatus,
+} from "../../api/character";
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useParams } from "react-router";
@@ -24,19 +29,61 @@ const CharacterSkills = () => {
     refetchOnWindowFocus: false,
   });
 
+  const { data: queueData } = useQuery({
+    queryKey: ["skills", "queue", characterID],
+    queryFn: () => getCharacterSkillQueues(characterID ? Number(characterID) : 0),
+    refetchOnWindowFocus: false,
+  });
+
+  // Shares CharacterHeader's query cache (same key + character_id) rather
+  // than firing a second request, purely to learn which of this account's
+  // characters is the main - so Character Select can list it first, and so
+  // char_id="0" (the generic "Skills" nav link) resolves to the main
+  // character rather than whichever character the skills query happens to
+  // list first.
+  const {
+    data: statusData,
+    isLoading: statusIsLoading,
+    isFetching: statusIsFetching,
+  } = useQuery({
+    queryKey: ["status", characterID],
+    queryFn: () => loadCharacterStatus(characterID ? Number(characterID) : 0),
+    refetchOnWindowFocus: false,
+  });
+  const mainCharacterId = statusData?.main?.character_id;
+
   if (isLoading) return <PanelLoader title={t("Data Loading")} message={t("Please Wait")} />;
 
   if (error || !data) return <ErrorLoader />;
 
   if (char_id === "0") {
-    setCharacter(String(data[0].character.character_id));
+    // The skills query alone can resolve before the status query does -
+    // wait for status too so this doesn't race and land on whatever
+    // character the skills endpoint happened to list first.
+    if (statusIsLoading || statusIsFetching) {
+      return <PanelLoader title={t("Data Loading")} message={t("Please Wait")} />;
+    }
+    setCharacter(String(mainCharacterId ?? data[0].character.character_id));
     return <PanelLoader title={t("Data Loading")} message={t("Please Wait")} />;
   } else {
     const char_data = data.filter(
       (obj) => obj.character.character_id === Number(char_id ? char_id : 0),
     );
 
-    let skill_data = char_data?.[0]?.skills;
+    // Highest queued end_level per skill name, for this character - a skill
+    // can appear multiple times in the queue for successive levels, so only
+    // the furthest one matters for the "queued" state shown on its dots.
+    const queuedLevels: Record<string, number> = {};
+    queueData
+      ?.find((c) => c.character.character_id === Number(char_id ? char_id : 0))
+      ?.queue?.forEach((q) => {
+        queuedLevels[q.skill] = Math.max(queuedLevels[q.skill] ?? 0, q.end_level);
+      });
+
+    let skill_data = char_data?.[0]?.skills?.map((s) => ({
+      ...s,
+      queued: queuedLevels[s.skill] ?? 0,
+    }));
 
     if (group_filter !== "" && group_filter !== "All") {
       skill_data = skill_data?.filter((o) =>
@@ -53,12 +100,20 @@ const CharacterSkills = () => {
         o.skill.toLowerCase().includes(skill_filter.toLowerCase()),
       );
     }
-    const charOptions = data.map((char) => {
-      return {
-        value: String(char.character.character_id),
-        label: char.character.character_name,
-      };
-    });
+    const charOptions = data
+      .map((char) => {
+        return {
+          value: String(char.character.character_id),
+          label: char.character.character_name,
+        };
+      })
+      .sort((a, b) => {
+        if (mainCharacterId != null) {
+          if (a.value === String(mainCharacterId)) return -1;
+          if (b.value === String(mainCharacterId)) return 1;
+        }
+        return a.label.localeCompare(b.label);
+      });
 
     const levelOptions = [
       {
@@ -108,18 +163,22 @@ const CharacterSkills = () => {
 
     return (
       <ErrorBoundary>
-        <SelectFilter
+        <NativeSelectFilter
           setFilter={setCharacter}
           options={charOptions}
           labelText={t("Character Select:")}
         />
         <div className="d-flex justify-content-between mb-3">
-          <SelectFilter
+          <NativeSelectFilter
             setFilter={setLevel}
             options={levelOptions}
             labelText={t("Level Filter:")}
           />
-          <SelectFilter setFilter={setGroup} options={groups} labelText={t("Group Filter:")} />
+          <NativeSelectFilter
+            setFilter={setGroup}
+            options={groups}
+            labelText={t("Group Filter:")}
+          />
           <TextFilter setFilterText={setFilter} labelText={t("Skill Filter:")} />
         </div>
         <h5 className="text-center w-100">{t("Skills Coverage (in percentage)")}</h5>
@@ -129,6 +188,7 @@ const CharacterSkills = () => {
         <div className="w-100" style={{ height: "600px" }}>
           <SkillsRadarGraph characterID={Number(char_id)} />
         </div>
+        <SkillBlockKey />
 
         <CharSkillGroups data={skill_data ?? []} />
       </ErrorBoundary>

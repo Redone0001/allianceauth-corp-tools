@@ -922,6 +922,23 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  "/audit/api/account/{character_id}/glance/activity_heatmap": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Get Glance Activity Heatmap */
+    get: operations["corptools_api_character_at_a_glance_get_glance_activity_heatmap"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   "/audit/api/account/{character_id}/glance/faction": {
     parameters: {
       query?: never;
@@ -2222,6 +2239,10 @@ export interface components {
       second_party: components["schemas"]["EveName"];
       /** Ref Type */
       ref_type: string;
+      /** Ref Type Name */
+      ref_type_name?: string | null;
+      /** Ref Type Description */
+      ref_type_description?: string | null;
       /** Balance */
       balance: number;
       /** Amount */
@@ -2565,6 +2586,10 @@ export interface components {
       skills: {
         [key: string]: unknown;
       };
+      /** Queue */
+      queue: {
+        [key: string]: unknown;
+      };
     };
     /** CharacterHistory */
     CharacterHistory: {
@@ -2752,6 +2777,38 @@ export interface components {
       /** Officer Frigate */
       officer_frigate?: number | null;
     };
+    /** GlanceActivityHeatmap */
+    GlanceActivityHeatmap: {
+      /** Cells */
+      cells: components["schemas"]["GlanceActivityHeatmapCell"][];
+      /** Mining */
+      mining: components["schemas"]["GlanceActivityHeatmapMiningDay"][];
+      /** Ratting */
+      ratting: components["schemas"]["GlanceActivityHeatmapRattingDay"][];
+    };
+    /** GlanceActivityHeatmapCell */
+    GlanceActivityHeatmapCell: {
+      /** Day */
+      day: string;
+      /** Block */
+      block: number;
+      /** Count */
+      count: number;
+    };
+    /** GlanceActivityHeatmapMiningDay */
+    GlanceActivityHeatmapMiningDay: {
+      /** Day */
+      day: string;
+      /** M3 */
+      m3: number;
+    };
+    /** GlanceActivityHeatmapRattingDay */
+    GlanceActivityHeatmapRattingDay: {
+      /** Day */
+      day: string;
+      /** Isk */
+      isk: number;
+    };
     /** GlanceFaction */
     GlanceFaction: {
       factions: components["schemas"]["GlanceFactionCounts"];
@@ -2864,6 +2921,15 @@ export interface components {
       /** Expand */
       expand?: boolean | null;
     };
+    /** RefTypeOption */
+    RefTypeOption: {
+      /** Value */
+      value: string;
+      /** Label */
+      label: string;
+      /** Description */
+      description?: string | null;
+    };
     /** CorporationWalletEvent */
     CorporationWalletEvent: {
       /** Division */
@@ -2879,6 +2945,10 @@ export interface components {
       second_party: components["schemas"]["EveName"];
       /** Ref Type */
       ref_type: string;
+      /** Ref Type Name */
+      ref_type_name?: string | null;
+      /** Ref Type Description */
+      ref_type_description?: string | null;
       /** Balance */
       balance: number;
       /** Amount */
@@ -4740,6 +4810,37 @@ export interface operations {
       };
     };
   };
+  corptools_api_character_at_a_glance_get_glance_activity_heatmap: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        character_id: number;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description OK */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["GlanceActivityHeatmap"];
+        };
+      };
+      /** @description Forbidden */
+      403: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": string;
+        };
+      };
+    };
+  };
   corptools_api_character_at_a_glance_get_glance_factions: {
     parameters: {
       query?: never;
@@ -5770,7 +5871,7 @@ export interface operations {
           [name: string]: unknown;
         };
         content: {
-          "application/json": string[];
+          "application/json": components["schemas"]["RefTypeOption"][];
         };
       };
       /** @description Forbidden */

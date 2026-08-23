@@ -1,6 +1,12 @@
 import { describe, expect, it } from "vitest";
 import type { BaseMapSystem } from "../SpaceMap/types";
-import { buildActivityNodes, MAX_RADIUS, MIN_VALUE_RADIUS, NO_VALUE_RADIUS } from "./layout";
+import {
+  buildActivityDots,
+  formatShortValue,
+  MAX_RADIUS,
+  MIN_VALUE_RADIUS,
+  NO_VALUE_RADIUS,
+} from "./layout";
 import type { ActivityMapResponse } from "./types";
 
 const makeSystem = (overrides: Partial<BaseMapSystem> & { id: number }): BaseMapSystem => ({
@@ -27,44 +33,36 @@ const makeResponse = (
   values,
 });
 
-describe("buildActivityNodes", () => {
-  it("builds one dot node per system with the resolved position for the given coord mode", () => {
+describe("buildActivityDots", () => {
+  it("builds one dot per system with the resolved position for the given coord mode, unbordered", () => {
     const systems = [makeSystem({ id: 1 }), makeSystem({ id: 2 })];
     const response = makeResponse(systems, []);
 
-    const nodes = buildActivityNodes(response, "2d");
+    const dots = buildActivityDots(response, "2d");
 
-    expect(nodes).toHaveLength(2);
-    expect(nodes[0]).toMatchObject({
-      id: "1",
-      type: "dot",
-      position: { x: 10, y: 10 },
-    });
-    expect(nodes[1].position).toEqual({ x: 20, y: 20 });
+    expect(dots).toHaveLength(2);
+    const byId = new Map(dots.map((d) => [d.id, d]));
+    expect(byId.get("1")).toMatchObject({ x: 10, y: 10, bordered: false });
+    expect(byId.get("2")).toMatchObject({ x: 20, y: 20, bordered: false });
   });
 
   it("uses real coordinates when coordMode is real", () => {
     const systems = [makeSystem({ id: 1 })];
     const response = makeResponse(systems, []);
 
-    const nodes = buildActivityNodes(response, "real");
+    const dots = buildActivityDots(response, "real");
 
-    expect(nodes[0].position).toEqual({ x: 100, y: 100 });
+    expect(dots[0]).toMatchObject({ x: 100, y: 100 });
   });
 
   it("falls back to NO_VALUE_RADIUS and NO_VALUE_COLOR for systems with no matching value", () => {
     const systems = [makeSystem({ id: 1 })];
     const response = makeResponse(systems, []);
 
-    const [node] = buildActivityNodes(response, "2d");
+    const [dot] = buildActivityDots(response, "2d");
 
-    expect(node.data.value).toBe(0);
-    expect(node.data.count).toBe(0);
-    expect(node.data.quantity).toBe(0);
-    expect(node.data.radius).toBe(NO_VALUE_RADIUS);
-    expect(node.initialWidth).toBe(NO_VALUE_RADIUS * 2);
-    expect(node.initialHeight).toBe(NO_VALUE_RADIUS * 2);
-    expect(node.data.color).not.toContain("info");
+    expect(dot.radius).toBe(NO_VALUE_RADIUS);
+    expect(dot.color).not.toContain("warning");
   });
 
   it("falls back to NO_VALUE_RADIUS for a system whose value is zero or negative", () => {
@@ -74,23 +72,19 @@ describe("buildActivityNodes", () => {
       { system_id: 2, value: -5, count: 0, quantity: 0 },
     ]);
 
-    const nodes = buildActivityNodes(response, "2d");
+    const dots = buildActivityDots(response, "2d");
 
-    expect(nodes[0].data.radius).toBe(NO_VALUE_RADIUS);
-    expect(nodes[1].data.radius).toBe(NO_VALUE_RADIUS);
+    expect(dots.every((d) => d.radius === NO_VALUE_RADIUS)).toBe(true);
   });
 
   it("scales the highest-value system to MAX_RADIUS and uses the value color", () => {
     const systems = [makeSystem({ id: 1 })];
     const response = makeResponse(systems, [{ system_id: 1, value: 100, count: 3, quantity: 7 }]);
 
-    const [node] = buildActivityNodes(response, "2d");
+    const [dot] = buildActivityDots(response, "2d");
 
-    expect(node.data.radius).toBe(MAX_RADIUS);
-    expect(node.data.value).toBe(100);
-    expect(node.data.count).toBe(3);
-    expect(node.data.quantity).toBe(7);
-    expect(node.data.color).toContain("info");
+    expect(dot.radius).toBe(MAX_RADIUS);
+    expect(dot.color).toContain("danger");
   });
 
   it("scales a lesser value between MIN_VALUE_RADIUS and MAX_RADIUS via sqrt scaling relative to the max", () => {
@@ -100,32 +94,107 @@ describe("buildActivityNodes", () => {
       { system_id: 2, value: 25, count: 0, quantity: 0 },
     ]);
 
-    const nodes = buildActivityNodes(response, "2d");
+    const dots = buildActivityDots(response, "2d");
+    const byId = new Map(dots.map((d) => [d.id, d]));
 
     // fraction = sqrt(25/100) = 0.5
     const expectedRadius = MIN_VALUE_RADIUS + 0.5 * (MAX_RADIUS - MIN_VALUE_RADIUS);
-    expect(nodes[1].data.radius).toBe(expectedRadius);
+    expect(byId.get("2")?.radius).toBe(expectedRadius);
   });
 
-  it("gives bigger dots a lower zIndex, so they paint behind smaller ones", () => {
+  it("heat-scales the glow color from warning (low) to danger (high) based on value fraction", () => {
     const systems = [makeSystem({ id: 1 }), makeSystem({ id: 2 })];
     const response = makeResponse(systems, [
-      { system_id: 1, value: 100, count: 0, quantity: 0 },
-      { system_id: 2, value: 25, count: 0, quantity: 0 },
+      { system_id: 1, value: 1, count: 0, quantity: 0 },
+      { system_id: 2, value: 100, count: 0, quantity: 0 },
     ]);
 
-    const nodes = buildActivityNodes(response, "2d");
+    const dots = buildActivityDots(response, "2d");
+    const byId = new Map(dots.map((d) => [d.id, d]));
 
-    expect(nodes[0].data.radius).toBeGreaterThan(nodes[1].data.radius);
-    expect(nodes[0].zIndex).toBeLessThan(nodes[1].zIndex as number);
+    // fraction = sqrt(1/100) = 0.1 -> mostly warning, a touch of danger mixed in
+    expect(byId.get("1")?.color).toContain("danger) 10%");
+    // fraction = sqrt(100/100) = 1 -> the max system is pure danger
+    expect(byId.get("2")?.color).toContain("danger) 100%");
   });
 
-  it("carries the system object through onto node data", () => {
+  it("orders dots biggest-radius-first, so smaller ones paint on top", () => {
+    const systems = [makeSystem({ id: 1 }), makeSystem({ id: 2 })];
+    const response = makeResponse(systems, [
+      { system_id: 1, value: 25, count: 0, quantity: 0 },
+      { system_id: 2, value: 100, count: 0, quantity: 0 },
+    ]);
+
+    const dots = buildActivityDots(response, "2d");
+
+    expect(dots[0].id).toBe("2");
+    expect(dots[0].radius).toBeGreaterThan(dots[1].radius);
+  });
+
+  it("anchors the label/marker to a fixed core radius, and only gradients dots with a value", () => {
+    const systems = [makeSystem({ id: 1 }), makeSystem({ id: 2 })];
+    const response = makeResponse(systems, [{ system_id: 1, value: 100, count: 0, quantity: 0 }]);
+
+    const dots = buildActivityDots(response, "2d");
+    const byId = new Map(dots.map((d) => [d.id, d]));
+
+    expect(byId.get("1")).toMatchObject({ gradient: true, coreRadius: NO_VALUE_RADIUS });
+    expect(byId.get("2")).toMatchObject({ gradient: false, coreRadius: NO_VALUE_RADIUS });
+  });
+
+  it("carries the system name through onto the dot", () => {
     const systems = [makeSystem({ id: 42, name: "Jita" })];
     const response = makeResponse(systems, []);
 
-    const [node] = buildActivityNodes(response, "2d");
+    const [dot] = buildActivityDots(response, "2d");
 
-    expect(node.data.system).toEqual(systems[0]);
+    expect(dot.name).toBe("Jita");
+  });
+
+  it("sets the expanded core marker's value label and heat color only for dots with a value", () => {
+    const systems = [makeSystem({ id: 1 }), makeSystem({ id: 2 })];
+    const response = makeResponse(systems, [
+      { system_id: 1, value: 456_000, count: 0, quantity: 0 },
+    ]);
+
+    const dots = buildActivityDots(response, "2d");
+    const byId = new Map(dots.map((d) => [d.id, d]));
+
+    expect(byId.get("1")?.valueLabel).toBe("456k");
+    expect(byId.get("1")?.expandedCoreRadius).toBeGreaterThan(0);
+    expect(byId.get("1")?.expandedCoreColor).toContain("danger");
+
+    expect(byId.get("2")?.valueLabel).toBeUndefined();
+    expect(byId.get("2")?.expandedCoreRadius).toBeUndefined();
+    expect(byId.get("2")?.expandedCoreColor).toBeUndefined();
+  });
+});
+
+describe("formatShortValue", () => {
+  it("leaves values under 1000 as-is", () => {
+    expect(formatShortValue(0)).toBe("0");
+    expect(formatShortValue(999)).toBe("999");
+  });
+
+  it("abbreviates thousands, millions, billions, and trillions", () => {
+    expect(formatShortValue(456_000)).toBe("456k");
+    expect(formatShortValue(12_345)).toBe("12k");
+    expect(formatShortValue(3_000_000)).toBe("3m");
+    expect(formatShortValue(478_000_000_000)).toBe("478b");
+    expect(formatShortValue(2_500_000_000_000)).toBe("3t");
+  });
+
+  it("rounds to the nearest unit rather than truncating", () => {
+    expect(formatShortValue(999_500)).toBe("1m");
+  });
+
+  it("carries a rounded-up value into the next unit up instead of overflowing to 4 digits", () => {
+    // 999_600_000 / 1_000_000 rounds to 1000, which isn't a valid 3-digit
+    // "m" display - it should report 1b instead.
+    expect(formatShortValue(999_600_000)).toBe("1b");
+  });
+
+  it("preserves the sign for negative values", () => {
+    expect(formatShortValue(-456_000)).toBe("-456k");
   });
 });

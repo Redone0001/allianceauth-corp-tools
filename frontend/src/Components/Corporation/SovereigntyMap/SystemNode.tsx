@@ -1,7 +1,6 @@
 import { memo } from "react";
 import { useTranslation } from "react-i18next";
 import { Handle, Position, type NodeProps } from "@xyflow/react";
-import { DotVisual } from "../../SpaceMap/DotNode";
 import { upgradeStateBg, type WorkforceTransport } from "../sovereigntyShared";
 import { BOOTSTRAP_HEX } from "./layout";
 import type { SystemNodeData } from "./types";
@@ -158,7 +157,7 @@ const SystemCard = ({ data, selected }: { data: SystemNodeData; selected?: boole
         position: "relative",
         minWidth: 130,
         maxWidth: 230,
-        background: "color-mix(in srgb, var(--bs-tertiary-bg) 70%, transparent)",
+        background: "color-mix(in srgb, var(--bs-body-bg) 70%, transparent)",
         border: `2px solid ${data.system.anarchy_alert ? BOOTSTRAP_HEX.danger : data.color}`,
         borderRadius: 6,
         boxShadow: [
@@ -224,16 +223,16 @@ const SystemCard = ({ data, selected }: { data: SystemNodeData; selected?: boole
   );
 };
 
+// Only hub systems ever reach this node type now (see buildHubNodes) - the
+// bulk, non-hub system set is drawn as canvas dots instead (see
+// SystemDotsLayer/buildSystemDots), so this only ever needs to render the
+// rich card.
 const SystemNodeImpl = ({ data, selected }: NodeProps & { data: SystemNodeData }) => {
   return (
     <>
       <Handle type="target" position={Position.Top} style={HANDLE_STYLE} />
       <Handle type="source" position={Position.Bottom} style={HANDLE_STYLE} />
-      {data.system.is_hub ? (
-        <SystemCard data={data} selected={selected} />
-      ) : (
-        <DotVisual radius={data.radius} color={data.color} name={data.system.name} />
-      )}
+      <SystemCard data={data} selected={selected} />
     </>
   );
 };

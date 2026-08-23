@@ -1,4 +1,5 @@
 # Standard Library
+from collections import defaultdict
 from datetime import timedelta
 
 # Third Party
@@ -8,7 +9,8 @@ from ninja.types import DictStrAny
 
 # Django
 from django.core.exceptions import ObjectDoesNotExist
-from django.db.models import F, Q, QuerySet, Sum
+from django.db.models import Count, F, Q, QuerySet, Sum
+from django.db.models.functions import ExtractHour, TruncDate
 from django.utils import timezone
 from django.utils.translation import gettext as _
 
@@ -29,6 +31,7 @@ from corptools.constants.types import (
     RAT_SUPER_GROUPS,
     RAT_TITAN_GROUPS,
 )
+from corptools.constants.wallet import PVE_GLANCE_STATS
 
 from .. import app_settings, models
 
@@ -152,6 +155,33 @@ def format_hours_as_duration(hours: int) -> str:
     return f"{', '.join(parts[:-1])}, and {parts[-1]}"
 
 
+def get_ref_type_lookup() -> DictStrAny:
+    """Map ESI wallet journal ref_type strings to their SDE display name/description.
+
+    AccountingEntryType.internal_name is the same string ESI uses for
+    ref_type, but the table is keyed by a separate numeric id, so this is a
+    plain dict lookup rather than a queryset join. name/description are
+    modeltranslation fields, so this resolves in the request's active
+    language. Not cached across requests since it would otherwise pin
+    whichever language populated it first.
+
+    AccountingEntryType was only added to django-eveonline-sde recently, so
+    older pinned versions of that dependency won't have it yet - fall back
+    to an empty lookup (raw ref_type strings) rather than 500ing.
+    """
+    try:
+        # Third Party
+        from eve_sde.models import AccountingEntryType
+    except ImportError:
+        return {}
+
+    return {
+        entry.internal_name: entry
+        for entry in AccountingEntryType.objects.all()
+        if entry.internal_name
+    }
+
+
 def wallet_check(characters, types, first_parties=None, minimum_amount=None, look_back=30):
     start_date = timezone.now() - timedelta(days=look_back)
     if isinstance(types, str):
@@ -185,6 +215,76 @@ def mining_check(characters, groups, look_back=30):
         type_name__group_id__in=groups,
         date__gte=start_date
     )
+
+
+def wallet_activity_heatmap(characters, look_back=90):
+    """
+    Wallet journal entry counts bucketed by day and 4h block (0-5, i.e.
+    hour // 4), for a calendar-style activity heatmap.
+    """
+    start_date = timezone.now() - timedelta(days=look_back)
+    rows = models.CharacterWalletJournalEntry.objects.filter(
+        character__character__in=characters,
+        date__gte=start_date,
+    ).annotate(
+        day=TruncDate("date"),
+        hour=ExtractHour("date"),
+    ).values("day", "hour").annotate(count=Count("id"))
+
+    buckets = defaultdict(int)
+    for row in rows:
+        block = row["hour"] // 4
+        buckets[(row["day"], block)] += row["count"]
+
+    return [
+        {"day": day.isoformat(), "block": block, "count": count}
+        for (day, block), count in buckets.items()
+    ]
+
+
+def mining_activity_by_day(characters, look_back=90):
+    """
+    Mining ledger volume (m3) totalled per day, for the same heatmap -
+    CharacterMiningLedger.date is date-only (no hour)
+    """
+    start_date = timezone.now() - timedelta(days=look_back)
+    rows = models.CharacterMiningLedger.objects.filter(
+        character__character__in=characters,
+        date__gte=start_date,
+    ).annotate(
+        volume_yield=F("quantity") * F("type_name__volume"),
+    ).values("date").annotate(total=Sum("volume_yield"))
+
+    return [
+        {"day": row["date"].isoformat(), "m3": row["total"] or 0}
+        for row in rows
+    ]
+
+
+def ratting_activity_by_day(characters, look_back=90):
+    """
+    Ratting ISK (bounty_prizes, same definition as the "ratting" glance
+    stat/PVEIskFilter) totalled per day, for the same heatmap.
+    """
+    stat_def = PVE_GLANCE_STATS["ratting"]
+    start_date = timezone.now() - timedelta(days=look_back)
+    qry = models.CharacterWalletJournalEntry.objects.filter(
+        character__character__in=characters,
+        ref_type__in=stat_def["ref_types"],
+        date__gte=start_date,
+    )
+    if stat_def["first_parties"]:
+        qry = qry.filter(first_party_id__in=stat_def["first_parties"])
+    if stat_def["minimum_amount"]:
+        qry = qry.filter(amount__gte=stat_def["minimum_amount"])
+
+    rows = qry.annotate(day=TruncDate("date")).values(
+        "day").annotate(total=Sum("amount"))
+
+    return [
+        {"day": row["day"].isoformat(), "isk": float(row["total"] or 0)}
+        for row in rows
+    ]
 
 
 def bounty_check(characters, groups, look_back=30):
@@ -261,28 +361,29 @@ def glance_officers_frigate_count(characters):
 
 
 def glance_incursion_check(characters):
-    from_ids = [1000125]
-    types = ["corporate_reward_payout"]
-    return wallet_check(characters, types, first_parties=from_ids).aggregate(total=Sum("amount"))["total"]
+    stat = PVE_GLANCE_STATS["incursion"]
+    return wallet_check(
+        characters, stat["ref_types"], first_parties=stat["first_parties"]
+    ).aggregate(total=Sum("amount"))["total"]
 
 
 def glances_missions_check(characters):
-    types = ["agent_mission_reward", "agent_mission_time_bonus_reward"]
-    return wallet_check(characters, types).aggregate(total=Sum("amount"))["total"]
+    stat = PVE_GLANCE_STATS["missions"]
+    return wallet_check(characters, stat["ref_types"]).aggregate(total=Sum("amount"))["total"]
 
 
 def glances_ratting_check(characters):
-    types = ["bounty_prizes"]
-    min_amount = 1000000
-    # 5 mill ticks should cover gate rats etc. but still show passive ratting
-    return wallet_check(characters, types, minimum_amount=min_amount).aggregate(total=Sum("amount"))["total"]
-    # return wallet_check(characters, types).aggregate(total=Sum("amount"))["total"]
+    stat = PVE_GLANCE_STATS["ratting"]
+    return wallet_check(
+        characters, stat["ref_types"], minimum_amount=stat["minimum_amount"]
+    ).aggregate(total=Sum("amount"))["total"]
 
 
 def glances_pochven_check(characters):
-    from_ids = [1000298]
-    types = ["corporate_reward_payout"]
-    return wallet_check(characters, types, first_parties=from_ids).aggregate(total=Sum("amount"))["total"]
+    stat = PVE_GLANCE_STATS["pochven"]
+    return wallet_check(
+        characters, stat["ref_types"], first_parties=stat["first_parties"]
+    ).aggregate(total=Sum("amount"))["total"]
 
 
 def glances_market_check(characters):
@@ -450,6 +551,7 @@ def assets_glances(ship_assets, sp_assets):
     bs_groups = [27, 381, 898, 900]
     indy_groups = [28, 380, 1202]
     indy_command_groups = [941]
+    carrier_groups = [547, 5120]
     dread_groups = [485, 4594]
     cap_indy_groups = [902, 513, 883]
     citadel_groups = [1657,]
@@ -509,7 +611,7 @@ def assets_glances(ship_assets, sp_assets):
             out_groups["capital_indy"] += group["grp_total"]
         elif grp == 30:
             out_groups["titan"] += group["grp_total"]
-        elif grp == 547:
+        elif grp in carrier_groups:
             out_groups["carrier"] += group["grp_total"]
         elif grp == 1538:
             out_groups["fax"] += group["grp_total"]

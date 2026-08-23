@@ -121,13 +121,15 @@ def filters():
         models.Skillfilter,
         models.TimeInCorpFilter,
         models.CharacterAgeFilter,
+        models.PVEIskFilter,
         models.Rolefilter,
         models.Titlefilter,
         models.HighestSPFilter,
         models.CurrentShipFilter,
         models.HomeStationFilter,
         models.JumpCloneFilter,
-        models.JumpCloneImplantSetFilter
+        models.JumpCloneImplantSetFilter,
+        models.MiningFilter,
     ]
 
 

@@ -6,7 +6,7 @@ import Button from "react-bootstrap/Button";
 import Form from "react-bootstrap/Form";
 import Modal from "react-bootstrap/Modal";
 import { useState } from "react";
-import { DoctrineSkillList } from "./DoctrineTypes";
+import { DoctrineQueue, DoctrineSkillList } from "./DoctrineTypes";
 
 export const DoctrineModal = ({
   show,
@@ -15,6 +15,7 @@ export const DoctrineModal = ({
   skill_reqs,
   all_skill_reqs,
   skill_list,
+  queue = {},
 }: {
   show: boolean;
   setShow: (show: boolean) => void;
@@ -22,6 +23,7 @@ export const DoctrineModal = ({
   skill_reqs: Record<string, number>;
   all_skill_reqs?: Record<string, number>;
   skill_list: DoctrineSkillList;
+  queue?: DoctrineQueue;
 }) => {
   const { t } = useTranslation();
   const completed = Object.keys(skill_reqs).length === 0;
@@ -74,6 +76,7 @@ export const DoctrineModal = ({
                 level={requiredLevel}
                 active={activeLevel}
                 trained={trainedLevel}
+                queued={queue[skill] ?? 0}
                 className="w-100"
               />
             );

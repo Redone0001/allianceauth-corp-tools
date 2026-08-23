@@ -874,6 +874,28 @@ class TestSecGroupBotFilters(TestCase):
         self.assertTrue(tests[9])
         self.assertTrue(tests[10])
 
+    def test_user_assets_no_loc_exclude_main(self):
+        _filter = ct_models.AssetsFilter.objects.create(
+            name="Assets Test",
+            description="Something to tell user",
+            exclude_main_character=True,
+        )
+        _filter.types.add(sde_models.ItemType.objects.get(id=10))
+
+        # Per test_user_assets_no_loc: users 1/3 only match via their MAIN
+        # character's asset, so excluding mains drops them. Users 6/8 match
+        # via an alt's asset instead, so they're unaffected.
+        self.assertFalse(_filter.process_filter(User.objects.get(id=1)))
+        self.assertFalse(_filter.process_filter(User.objects.get(id=3)))
+        self.assertTrue(_filter.process_filter(User.objects.get(id=6)))
+        self.assertTrue(_filter.process_filter(User.objects.get(id=8)))
+
+        tests = _filter.audit_filter(User.objects.filter(id__in=[1, 3, 6, 8]))
+        self.assertFalse(tests[1]["check"])
+        self.assertFalse(tests[3]["check"])
+        self.assertTrue(tests[6]["check"])
+        self.assertTrue(tests[8]["check"])
+
     def test_user_assets_location_flag(self):
         a1 = sde_models.ItemType.objects.get(id=10)
         l1 = ct_models.EveLocation.objects.get(location_id=1)
@@ -1382,6 +1404,69 @@ class TestSecGroupBotFilters(TestCase):
         self.assertFalse(tests[8]['check'])
         self.assertFalse(tests[9]['check'])
         self.assertTrue(tests[10]['check'])
+
+    def test_user_skill_lists_exclude_main_drops_main_only_pass(self):
+        _filter = ct_models.Skillfilter.objects.create(
+            name="Skills Test",
+            description="Something to tell user",
+            exclude_main_character=True,
+        )
+        _filter.required_skill_lists.add(
+            ct_models.SkillList.objects.get(name="Test Skills 1"))
+
+        # Per test_user_skill_lists_omega, users 1 and 10 only pass because
+        # their MAIN character has Skill 1 trained - their alts don't, so
+        # excluding mains drops both.
+        self.assertFalse(_filter.process_filter(User.objects.get(id=1)))
+        self.assertFalse(_filter.process_filter(User.objects.get(id=10)))
+
+        tests = _filter.audit_filter(User.objects.filter(id__in=[1, 10]))
+        self.assertFalse(tests[1]['check'])
+        self.assertFalse(tests[10]['check'])
+
+    def test_user_skill_lists_exclude_main_keeps_alt_pass(self):
+        user = AuthUtils.create_user("SkillAltUser")
+        main_char = AuthUtils.add_main_character_2(
+            user, "Skill Alt Main", 9101, corp_id=1,
+            corp_name='Test Corp 1', corp_ticker='TST1')
+        CharacterOwnership.objects.create(
+            user=user, character=main_char, owner_hash="skillaltmain")
+        ct_models.CharacterAudit.objects.create(character=main_char)
+
+        alt_char = EveCharacter.objects.create(
+            character_name="Skill Alt Alt",
+            character_id=9102,
+            corporation_name='Test Corp 1',
+            corporation_id=1,
+            corporation_ticker='TST1')
+        CharacterOwnership.objects.create(
+            user=user, character=alt_char, owner_hash="skillaltalt")
+        alt_audit = ct_models.CharacterAudit.objects.create(character=alt_char)
+
+        sk1 = sde_models.ItemType.objects.get(id=1)
+        ct_models.Skill.objects.create(
+            character=alt_audit,
+            skill_id=sk1.id,
+            skill_name=sk1,
+            active_skill_level=5,
+            trained_skill_level=5,
+            skillpoints_in_skill=500,
+        )
+
+        _filter = ct_models.Skillfilter.objects.create(
+            name="Skills Test",
+            description="Something to tell user",
+            exclude_main_character=True,
+        )
+        _filter.required_skill_lists.add(
+            ct_models.SkillList.objects.get(name="Test Skills 1"))
+
+        # The matching skill lives only on the alt, so it still passes with
+        # mains excluded.
+        self.assertTrue(_filter.process_filter(user))
+
+        tests = _filter.audit_filter(User.objects.filter(id=user.id))
+        self.assertTrue(tests[user.id]['check'])
 
     def test_user_has_roles_director(self):
         _filter = ct_models.Rolefilter.objects.create(name="roles Test",
@@ -2213,6 +2298,74 @@ class TestSecGroupBotFilters(TestCase):
         self.assertFalse(tests[8]["check"])
         self.assertFalse(tests[9]["check"])
 
+    def test_user_time_in_corp_specific_corp_p(self):
+        # All of these characters currently live in corp 1 (per setUpTestData),
+        # so a specific-corp filter targeting corp 2 must go off their most
+        # recent corp-2 stint, not their current corp - including for
+        # users 8/9 whose latest history row is corp 2 (so the default,
+        # unset-corp filter would reject them: it requires the latest
+        # history row to match their live/current corp, which is 1).
+        corp2 = EveCorporationInfo.objects.create(
+            corporation_id=2,
+            corporation_name="Test Corp 2",
+            corporation_ticker="TST2",
+            member_count=10,
+        )
+        _filter = ct_models.TimeInCorpFilter.objects.create(
+            name="Time in Corp 2 > 10d",
+            description="Something to tell user",
+            days_in_corp=10,
+            corp=corp2,
+        )
+
+        users = {}
+        for user in ct_models.CharacterAudit.objects.all():
+            users[user.character.character_ownership.user.id] = None
+
+        tests = {}
+        for k, u in users.items():
+            tests[k] = _filter.process_filter(User.objects.get(id=k))
+
+        self.assertTrue(tests[1])
+        self.assertTrue(tests[2])
+        self.assertTrue(tests[3])
+        self.assertTrue(tests[4])
+        self.assertFalse(tests[5])  # no corp history at all
+        self.assertTrue(tests[6])
+        self.assertTrue(tests[7])
+        self.assertTrue(tests[8])  # not their current corp - still passes
+        self.assertTrue(tests[9])  # not their current corp - still passes
+
+    def test_user_time_in_corp_specific_corp_a(self):
+        corp2 = EveCorporationInfo.objects.create(
+            corporation_id=2,
+            corporation_name="Test Corp 2",
+            corporation_ticker="TST2",
+            member_count=10,
+        )
+        _filter = ct_models.TimeInCorpFilter.objects.create(
+            name="Time in Corp 2 > 10d",
+            description="Something to tell user",
+            days_in_corp=10,
+            corp=corp2,
+        )
+
+        users = {}
+        for user in ct_models.CharacterAudit.objects.all():
+            users[user.character.character_ownership.user.id] = None
+
+        tests = _filter.audit_filter(User.objects.filter(id__in=users))
+
+        self.assertTrue(tests[1]["check"])
+        self.assertTrue(tests[2]["check"])
+        self.assertTrue(tests[3]["check"])
+        self.assertTrue(tests[4]["check"])
+        self.assertFalse(tests[5]["check"])
+        self.assertTrue(tests[6]["check"])
+        self.assertTrue(tests[7]["check"])
+        self.assertTrue(tests[8]["check"])
+        self.assertTrue(tests[9]["check"])
+
     def test_user_time_in_corp_no_audit_rev(self):
         _filter = ct_models.TimeInCorpFilter.objects.create(
             name="Time in Corp > 20d",
@@ -2258,6 +2411,204 @@ class TestSecGroupBotFilters(TestCase):
         tests = _filter.audit_filter(User.objects.filter(id__in=[11]))
 
         self.assertFalse(tests[11]["check"])
+
+    def _char_audit_for_user(self, user_id):
+        return ct_models.CharacterAudit.objects.get(
+            character=User.objects.get(id=user_id).profile.main_character)
+
+    def test_user_mining_volume(self):
+        ore_group = sde_models.ItemGroup.objects.create(
+            id=500, name="Ore Group")
+        ore_type = sde_models.ItemType.objects.create(
+            id=500, name="Veldspar", published=True, group=ore_group, volume=1.0)
+        system = sde_models.SolarSystem.objects.get(id=1)
+
+        ct_models.CharacterMiningLedger.objects.create(
+            id="m1", character=self._char_audit_for_user(1),
+            date=timezone.now().date(), type_name=ore_type, system=system,
+            quantity=1000,
+        )
+        ct_models.CharacterMiningLedger.objects.create(
+            id="m2", character=self._char_audit_for_user(2),
+            date=timezone.now().date(), type_name=ore_type, system=system,
+            quantity=50,
+        )
+
+        _filter = ct_models.MiningFilter.objects.create(
+            name="Mining >= 500",
+            description="Something to tell user",
+            min_volume=500,
+        )
+
+        self.assertTrue(_filter.process_filter(User.objects.get(id=1)))
+        self.assertFalse(_filter.process_filter(User.objects.get(id=2)))
+        self.assertFalse(_filter.process_filter(
+            User.objects.get(id=3)))  # no mining at all
+
+        tests = _filter.audit_filter(User.objects.filter(id__in=[1, 2, 3]))
+        self.assertTrue(tests[1]["check"])
+        self.assertFalse(tests[2]["check"])
+        self.assertFalse(tests[3]["check"])
+
+    def test_user_mining_volume_reversed(self):
+        ore_group = sde_models.ItemGroup.objects.create(
+            id=501, name="Ore Group")
+        ore_type = sde_models.ItemType.objects.create(
+            id=501, name="Veldspar", published=True, group=ore_group, volume=1.0)
+        system = sde_models.SolarSystem.objects.get(id=1)
+
+        ct_models.CharacterMiningLedger.objects.create(
+            id="m3", character=self._char_audit_for_user(1),
+            date=timezone.now().date(), type_name=ore_type, system=system,
+            quantity=1000,
+        )
+
+        _filter = ct_models.MiningFilter.objects.create(
+            name="Mining < 500",
+            description="Something to tell user",
+            min_volume=500,
+            reversed_logic=True,
+        )
+
+        self.assertFalse(_filter.process_filter(User.objects.get(id=1)))
+        self.assertTrue(_filter.process_filter(User.objects.get(id=2)))
+
+    def test_user_mining_look_back_window(self):
+        ore_group = sde_models.ItemGroup.objects.create(
+            id=502, name="Ore Group")
+        ore_type = sde_models.ItemType.objects.create(
+            id=502, name="Veldspar", published=True, group=ore_group, volume=1.0)
+        system = sde_models.SolarSystem.objects.get(id=1)
+
+        # Outside the look-back window - must not count.
+        ct_models.CharacterMiningLedger.objects.create(
+            id="m4", character=self._char_audit_for_user(1),
+            date=(timezone.now() - timedelta(days=45)).date(),
+            type_name=ore_type, system=system, quantity=1000,
+        )
+
+        _filter = ct_models.MiningFilter.objects.create(
+            name="Mining >= 500 in 30d",
+            description="Something to tell user",
+            min_volume=500,
+            look_back_days=30,
+        )
+
+        self.assertFalse(_filter.process_filter(User.objects.get(id=1)))
+
+    def test_user_mining_type_and_group_scoping(self):
+        ore_group = sde_models.ItemGroup.objects.create(
+            id=503, name="Ore Group")
+        gas_group = sde_models.ItemGroup.objects.create(
+            id=504, name="Gas Group")
+        ore_type = sde_models.ItemType.objects.create(
+            id=503, name="Veldspar", published=True, group=ore_group, volume=1.0)
+        gas_type = sde_models.ItemType.objects.create(
+            id=504, name="Mykoserocin", published=True, group=gas_group, volume=1.0)
+        system = sde_models.SolarSystem.objects.get(id=1)
+
+        ct_models.CharacterMiningLedger.objects.create(
+            id="m5", character=self._char_audit_for_user(1),
+            date=timezone.now().date(), type_name=gas_type, system=system,
+            quantity=1000,
+        )
+
+        _filter = ct_models.MiningFilter.objects.create(
+            name="Ore only >= 500",
+            description="Something to tell user",
+            min_volume=500,
+        )
+        _filter.groups.add(ore_group)
+
+        # gas doesn't count when scoped to the ore group only
+        self.assertFalse(_filter.process_filter(User.objects.get(id=1)))
+
+        _filter.groups.clear()
+        _filter.groups.add(gas_group)
+        self.assertTrue(_filter.process_filter(User.objects.get(id=1)))
+
+    def test_user_mining_security_status_scoping(self):
+        region = sde_models.Region.objects.create(
+            id=100, name="Sec Test Region")
+        const = sde_models.Constellation.objects.create(
+            id=100, name="Sec Test Const", region=region)
+        hs_system = sde_models.SolarSystem.objects.create(
+            id=100, name="HS System", security_status=0.6, x=1, y=1, z=1,
+            security_class="a", constellation=const,
+        )
+        ns_system = sde_models.SolarSystem.objects.create(
+            id=101, name="NS System", security_status=-0.2, x=1, y=1, z=1,
+            security_class="c", constellation=const,
+        )
+        wh_system = sde_models.SolarSystem.objects.create(
+            id=31_000_001, name="J100001", security_status=-1.0, x=1, y=1, z=1,
+            security_class="", constellation=const,
+        )
+
+        ore_group = sde_models.ItemGroup.objects.create(
+            id=505, name="Ore Group")
+        ore_type = sde_models.ItemType.objects.create(
+            id=505, name="Veldspar", published=True, group=ore_group, volume=1.0)
+
+        user1_audit = self._char_audit_for_user(1)
+        ct_models.CharacterMiningLedger.objects.create(
+            id="m6", character=user1_audit, date=timezone.now().date(),
+            type_name=ore_type, system=hs_system, quantity=1000,
+        )
+        ct_models.CharacterMiningLedger.objects.create(
+            id="m7", character=user1_audit, date=timezone.now().date(),
+            type_name=ore_type, system=ns_system, quantity=1000,
+        )
+        ct_models.CharacterMiningLedger.objects.create(
+            id="m8", character=user1_audit, date=timezone.now().date(),
+            type_name=ore_type, system=wh_system, quantity=1000,
+        )
+
+        # High sec only: null sec + w-space yield doesn't count.
+        hs_only = ct_models.MiningFilter.objects.create(
+            name="HS only >= 1500",
+            description="Something to tell user",
+            min_volume=1500,
+            include_low_sec=False,
+            include_null_sec=False,
+            include_w_space=False,
+        )
+        self.assertFalse(hs_only.process_filter(User.objects.get(id=1)))
+
+        hs_only_low = ct_models.MiningFilter.objects.create(
+            name="HS only >= 500",
+            description="Something to tell user",
+            min_volume=500,
+            include_low_sec=False,
+            include_null_sec=False,
+            include_w_space=False,
+        )
+        self.assertTrue(hs_only_low.process_filter(User.objects.get(id=1)))
+
+        # Null sec only: only the ns_system entry counts.
+        ns_only = ct_models.MiningFilter.objects.create(
+            name="NS only >= 1500",
+            description="Something to tell user",
+            min_volume=1500,
+            include_high_sec=False,
+            include_low_sec=False,
+            include_w_space=False,
+        )
+        self.assertFalse(ns_only.process_filter(User.objects.get(id=1)))
+
+        # Unchecking every sec-status flag must match nothing, not error -
+        # min_volume=1 so a correctly-empty total (0) reads as a fail
+        # rather than trivially passing a >=0 threshold.
+        none_selected = ct_models.MiningFilter.objects.create(
+            name="Nothing selected",
+            description="Something to tell user",
+            min_volume=1,
+            include_high_sec=False,
+            include_low_sec=False,
+            include_null_sec=False,
+            include_w_space=False,
+        )
+        self.assertFalse(none_selected.process_filter(User.objects.get(id=1)))
 
     def test_user_home_station(self):
         l1 = ct_models.EveLocation.objects.get(location_id=1)
@@ -2610,6 +2961,110 @@ class TestSecGroupBotFilters(TestCase):
         # which crashes any caller that indexes the result.
         _filter = ct_models.Skillfilter.objects.create(
             name="Unconfigured", description="Something to tell user")
+
+        self.assertFalse(_filter.process_filter(User.objects.get(id=1)))
+        tests = _filter.audit_filter(User.objects.filter(id__in=[1]))
+        self.assertFalse(tests[1]["check"])
+
+    def _make_wallet_entry(self, user_id, ref_type, amount, days_ago=1, entry_id=None):
+        audit = ct_models.CharacterAudit.objects.get(
+            character__character_id=user_id)
+        return ct_models.CharacterWalletJournalEntry.objects.create(
+            character=audit,
+            date=timezone.now() - timedelta(days=days_ago),
+            description="test entry",
+            entry_id=entry_id or (user_id * 1000 + days_ago),
+            ref_type=ref_type,
+            amount=amount,
+        )
+
+    def test_pve_isk_filter_ratting_threshold(self):
+        # User 1: two bounty ticks over the per-entry minimum, total passes.
+        self._make_wallet_entry(1, "bounty_prizes", 2_000_000)
+        # User 2: a single tick below the 1m per-entry minimum used by the
+        # "ratting" stat (mirrors glances_ratting_check's gate-rat filter) -
+        # excluded from the sum entirely, so total is 0.
+        self._make_wallet_entry(2, "bounty_prizes", 500_000)
+        # User 3: earns plenty, but the entry falls outside the default
+        # 30 day look_back_days window.
+        self._make_wallet_entry(3, "bounty_prizes", 5_000_000, days_ago=45)
+
+        _filter = ct_models.PVEIskFilter.objects.create(
+            name="Ratting", description="Something to tell user",
+            stat="ratting", isk_threshold=1_500_000,
+        )
+
+        self.assertTrue(_filter.process_filter(User.objects.get(id=1)))
+        self.assertFalse(_filter.process_filter(User.objects.get(id=2)))
+        self.assertFalse(_filter.process_filter(User.objects.get(id=3)))
+        # No wallet data at all.
+        self.assertFalse(_filter.process_filter(User.objects.get(id=4)))
+
+    def test_pve_isk_filter_ratting_threshold_reverse(self):
+        self._make_wallet_entry(1, "bounty_prizes", 2_000_000)
+
+        _filter = ct_models.PVEIskFilter.objects.create(
+            name="Ratting Reverse", description="Something to tell user",
+            stat="ratting", isk_threshold=1_500_000, reversed_logic=True,
+        )
+
+        self.assertFalse(_filter.process_filter(User.objects.get(id=1)))
+        self.assertTrue(_filter.process_filter(User.objects.get(id=2)))
+
+    def test_pve_isk_filter_look_back_days_boundary(self):
+        self._make_wallet_entry(3, "bounty_prizes", 5_000_000, days_ago=45)
+
+        thirty_day = ct_models.PVEIskFilter.objects.create(
+            name="Ratting 30d", description="Something to tell user",
+            stat="ratting", isk_threshold=1_000_000, look_back_days=30,
+        )
+        sixty_day = ct_models.PVEIskFilter.objects.create(
+            name="Ratting 60d", description="Something to tell user",
+            stat="ratting", isk_threshold=1_000_000, look_back_days=60,
+        )
+
+        self.assertFalse(thirty_day.process_filter(User.objects.get(id=3)))
+        self.assertTrue(sixty_day.process_filter(User.objects.get(id=3)))
+
+    def test_pve_isk_filter_stat_switch(self):
+        # Mission income shouldn't count toward the "ratting" stat, and
+        # vice versa - the two stats must stay independent.
+        self._make_wallet_entry(4, "agent_mission_reward", 3_000_000)
+
+        ratting = ct_models.PVEIskFilter.objects.create(
+            name="Ratting", description="Something to tell user",
+            stat="ratting", isk_threshold=1_000_000,
+        )
+        missions = ct_models.PVEIskFilter.objects.create(
+            name="Missions", description="Something to tell user",
+            stat="missions", isk_threshold=1_000_000,
+        )
+
+        self.assertFalse(ratting.process_filter(User.objects.get(id=4)))
+        self.assertTrue(missions.process_filter(User.objects.get(id=4)))
+
+    def test_pve_isk_filter_audit_filter_message(self):
+        self._make_wallet_entry(1, "bounty_prizes", 2_000_000)
+
+        _filter = ct_models.PVEIskFilter.objects.create(
+            name="Ratting", description="Something to tell user",
+            stat="ratting", isk_threshold=1_500_000,
+        )
+
+        tests = _filter.audit_filter(
+            User.objects.filter(id__in=[1, 2]))
+        self.assertTrue(tests[1]["check"])
+        self.assertEqual(tests[1]["message"], "2,000,000 ISK")
+        self.assertFalse(tests[2]["check"])
+        self.assertEqual(tests[2]["message"], "0 ISK")
+
+    def test_pve_isk_filter_unconfigured(self):
+        # No wallet data at all for this user - should fail closed like
+        # every other filter, not raise.
+        _filter = ct_models.PVEIskFilter.objects.create(
+            name="Unconfigured", description="Something to tell user",
+            stat="ratting", isk_threshold=1_000_000,
+        )
 
         self.assertFalse(_filter.process_filter(User.objects.get(id=1)))
         tests = _filter.audit_filter(User.objects.filter(id__in=[1]))

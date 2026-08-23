@@ -196,6 +196,7 @@ class CharacterDoctrines(Schema):
     character: Character
     doctrines: dict
     skills: dict
+    queue: dict
 
 
 class CharacterNotification(Schema):
@@ -222,6 +223,8 @@ class CharacterWalletEvent(Schema):
     first_party: EveName
     second_party: EveName
     ref_type: str
+    ref_type_name: Optional[str] = None
+    ref_type_description: Optional[str] = None
     balance: float
     amount: float
     own_account: Optional[bool] = True
@@ -235,6 +238,12 @@ class LoyaltyPoints(Schema):
     amount: int
 
 
+class RefTypeOption(Schema):
+    value: str
+    label: str
+    description: Optional[str] = None
+
+
 class CorporationWalletEvent(Schema):
     division: str
     id: int
@@ -242,6 +251,8 @@ class CorporationWalletEvent(Schema):
     first_party: EveName
     second_party: EveName
     ref_type: str
+    ref_type_name: Optional[str] = None
+    ref_type_description: Optional[str] = None
     balance: float
     amount: float
     reason: Optional[str] = None
@@ -437,6 +448,28 @@ class GlanceMiningActivities(Schema):
     mining_moon: Optional[float] = None
     mining_gas: Optional[float] = None
     mining_ice: Optional[float] = None
+
+
+class GlanceActivityHeatmapCell(Schema):
+    day: str
+    block: int
+    count: int
+
+
+class GlanceActivityHeatmapMiningDay(Schema):
+    day: str
+    m3: float
+
+
+class GlanceActivityHeatmapRattingDay(Schema):
+    day: str
+    isk: float
+
+
+class GlanceActivityHeatmap(Schema):
+    cells: List[GlanceActivityHeatmapCell]
+    mining: List[GlanceActivityHeatmapMiningDay]
+    ratting: List[GlanceActivityHeatmapRattingDay]
 
 
 class GlanceRatting(Schema):
