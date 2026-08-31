@@ -467,10 +467,13 @@ def update_character_assets(character_id, force_refresh=False):
         # the character with zero assets mid-refresh (e.g. securegroups asset
         # filters false-failing during the update window).
         with transaction.atomic():
-            CharacterAsset.objects.filter(character=audit_char).delete()
-
+            CharacterAsset.objects.filter(
+                character=audit_char
+            ).delete()
             CharacterAsset.objects.bulk_create(
-                items, batch_size=CT_DB_BULK_CREATE_BATCH_SIZE)
+                items,
+                batch_size=CT_DB_BULK_CREATE_BATCH_SIZE
+            )
 
         logger.debug(
             f"CT_TIME: {time.perf_counter() - _st} update_character_assets {character_id}"
