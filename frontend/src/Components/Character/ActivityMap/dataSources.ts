@@ -12,6 +12,7 @@ import {
   getCharacterActivityMapMercenaryDens,
   getCharacterActivityMapMercenaryTacticalOperations,
   getCharacterActivityMapMining,
+  getCharacterActivityMapOrders,
   getCharacterActivityMapPi,
   getCharacterActivityMapRatting,
 } from "../../../api/character";
@@ -60,6 +61,12 @@ export const CHARACTER_ACTIVITY_MAP_DATA_SOURCES: ActivityMapDataSource[] = [
     label: "Contracts (Logistics)",
     load: getCharacterActivityMapContractsLogistics,
     countLabel: "Contract Endpoints",
+  },
+  {
+    value: "orders",
+    label: "Market Orders",
+    load: getCharacterActivityMapOrders,
+    countLabel: "Active Orders",
   },
   {
     value: "industry",

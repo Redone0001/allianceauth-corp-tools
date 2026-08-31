@@ -223,9 +223,13 @@ def wallet_activity_heatmap(characters, look_back=90):
     hour // 4), for a calendar-style activity heatmap.
     """
     start_date = timezone.now() - timedelta(days=look_back)
+    market_ref_types = ["brokers_fee", "market_provider_tax",
+                        "market_transaction", "transaction_tax"]
     rows = models.CharacterWalletJournalEntry.objects.filter(
         character__character__in=characters,
         date__gte=start_date,
+    ).exclude(
+        ref_type__in=market_ref_types,
     ).annotate(
         day=TruncDate("date"),
         hour=ExtractHour("date"),
