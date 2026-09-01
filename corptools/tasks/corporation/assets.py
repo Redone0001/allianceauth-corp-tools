@@ -8,6 +8,7 @@ from celery import chain, shared_task
 from eve_sde.models import ItemType
 
 # Django
+from django.db import transaction
 from django.db.models import F, Q
 from django.db.models.aggregates import Sum
 
@@ -87,14 +88,18 @@ def corp_update_assets(corp_id, force_refresh: bool = False):
 
         items.append(asset_item)
 
-    delete_query = CorpAsset.objects.filter(
-        corporation=audit_corp)  # Flush Assets
-    if delete_query.exists():
-        # with coords we need to care about the fkeys/signals
-        delete_query.delete()
+    # Flush + recreate in one transaction so concurrent readers never see the
+    # corporation with zero assets mid-refresh (e.g. securegroups asset filters
+    # false-failing during the update window).
+    with transaction.atomic():
+        CorpAsset.objects.filter(
+            corporation=audit_corp
+        ).delete()
+        CorpAsset.objects.bulk_create(
+            items,
+            batch_size=CT_DB_BULK_CREATE_BATCH_SIZE
+        )
 
-    CorpAsset.objects.bulk_create(
-        items, batch_size=CT_DB_BULK_CREATE_BATCH_SIZE)
     try:
         corp_update_asset_names(corp_id)
     except Exception as e:
