@@ -1,3 +1,4 @@
+import { GroupedCharacters } from "../../Components/Character/GroupedCharacters";
 import { PanelLoader } from "../../Components/Loaders/loaders";
 import { CharacterAllegiancePortrait } from "../../Components/EveImages/EveImages";
 import { TextFilter } from "../../Components/Helpers/TextFilter";
@@ -25,9 +26,7 @@ type CategoryOption = {
 };
 
 const categoryFilterValues = (categories?: string[]) => {
-  const normalized = [
-    ...new Set(categories?.map((category) => category.trim()).filter(Boolean)),
-  ];
+  const normalized = [...new Set(categories?.map((category) => category.trim()).filter(Boolean))];
   return normalized.length > 0 ? normalized : [UNCATEGORIZED_CATEGORY];
 };
 
@@ -48,8 +47,9 @@ const CharacterDoctrine = () => {
   const categoryOptions =
     data
       ?.flatMap((char: components["schemas"]["CharacterDoctrines"]) =>
-        (Object.values(char.doctrines) as DoctrineSkillReqs[])
-          .flatMap((doctrine) => categoryFilterValues(doctrine._meta?.categories)),
+        (Object.values(char.doctrines) as DoctrineSkillReqs[]).flatMap((doctrine) =>
+          categoryFilterValues(doctrine._meta?.categories),
+        ),
       )
       .filter((category, index, categories) => categories.indexOf(category) === index)
       .sort((a, b) => {
@@ -213,58 +213,68 @@ const CharacterDoctrine = () => {
         )}
       </div>
       {data ? (
-        data.map((char: components["schemas"]["CharacterDoctrines"]) => {
-          const doctrineCount = Object.entries(char.doctrines).length;
-          const filtered_doctrines = (
-            Object.entries(char.doctrines) as Array<[string, DoctrineSkillReqs]>
-          )?.reduce((output, [k, v]) => {
-            return output || doctrineMatchesFilters(k, v);
-          }, false);
-          return (
-            filtered_doctrines && (
-              <Card className="my-2">
-                <Card.Header>
-                  <Card.Title>
-                    <div className="m-0">
-                      {char.character.character_name}{" "}
-                      <span className="float-end">
-                        {char.character.corporation_name}
-                        {char.character.alliance_name && ` (${char.character.alliance_name})`}
-                      </span>
-                    </div>
-                  </Card.Title>
-                </Card.Header>
-                <Card.Body className="d-flex align-items-center">
-                  <div className="flex-one m-2">
-                    <CharacterAllegiancePortrait size={128} character={char.character} />
-                  </div>
-                  <div className="d-flex flex-grow-1 justify-content-center flex-wrap">
-                    {doctrineCount > 0 ? (
-                      <>
-                        {(Object.entries(char.doctrines) as Array<[string, DoctrineSkillReqs]>).map(
-                          ([k, v]) => {
-                            return (
-                              doctrineMatchesFilters(k, v) && (
-                                <DoctrineCheck
-                                  name={k}
-                                  skill_reqs={v}
-                                  skill_list={char.skills as DoctrineSkillList}
-                                  queue={char.queue as DoctrineQueue}
-                                />
-                              )
-                            );
-                          },
+        <GroupedCharacters
+          items={data.filter((char) =>
+            (Object.entries(char.doctrines) as Array<[string, DoctrineSkillReqs]>).some(
+              ([name, doctrine]) => doctrineMatchesFilters(name, doctrine),
+            ),
+          )}
+        >
+          {(characters) =>
+            characters.map((char: components["schemas"]["CharacterDoctrines"]) => {
+              const doctrineCount = Object.entries(char.doctrines).length;
+              const filtered_doctrines = (
+                Object.entries(char.doctrines) as Array<[string, DoctrineSkillReqs]>
+              )?.reduce((output, [k, v]) => {
+                return output || doctrineMatchesFilters(k, v);
+              }, false);
+              return (
+                filtered_doctrines && (
+                  <Card key={char.character.character_id} className="my-2">
+                    <Card.Header>
+                      <Card.Title>
+                        <div className="m-0">
+                          {char.character.character_name}{" "}
+                          <span className="float-end">
+                            {char.character.corporation_name}
+                            {char.character.alliance_name && ` (${char.character.alliance_name})`}
+                          </span>
+                        </div>
+                      </Card.Title>
+                    </Card.Header>
+                    <Card.Body className="d-flex align-items-center">
+                      <div className="flex-one m-2">
+                        <CharacterAllegiancePortrait size={128} character={char.character} />
+                      </div>
+                      <div className="d-flex flex-grow-1 justify-content-center flex-wrap">
+                        {doctrineCount > 0 ? (
+                          <>
+                            {(
+                              Object.entries(char.doctrines) as Array<[string, DoctrineSkillReqs]>
+                            ).map(([k, v]) => {
+                              return (
+                                doctrineMatchesFilters(k, v) && (
+                                  <DoctrineCheck
+                                    name={k}
+                                    skill_reqs={v}
+                                    skill_list={char.skills as DoctrineSkillList}
+                                    queue={char.queue as DoctrineQueue}
+                                  />
+                                )
+                              );
+                            })}
+                          </>
+                        ) : (
+                          <p>{t("No Tokens")}</p>
                         )}
-                      </>
-                    ) : (
-                      <p>{t("No Tokens")}</p>
-                    )}
-                  </div>
-                </Card.Body>
-              </Card>
-            )
-          );
-        })
+                      </div>
+                    </Card.Body>
+                  </Card>
+                )
+              );
+            })
+          }
+        </GroupedCharacters>
       ) : (
         <PanelLoader title={t("Data Loading")} message={t("Please Wait")} />
       )}

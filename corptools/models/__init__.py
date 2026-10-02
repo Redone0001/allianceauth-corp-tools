@@ -12,3 +12,4 @@ from .skills import *
 from .sovereignty import *
 from .structures import *
 from .wallets import *
+from .character_groups import *

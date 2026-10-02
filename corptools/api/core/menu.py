@@ -43,6 +43,10 @@ class MenuApiEndpoints:
                         "link": "account/status"
                     },
                     {
+                        "name": _("Grouping of character"),
+                        "link": "account/groups"
+                    },
+                    {
                         "name": _("Corp History"),
                         "link": "account/pubdata"
                     }

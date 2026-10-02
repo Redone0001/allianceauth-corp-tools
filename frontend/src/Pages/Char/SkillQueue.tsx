@@ -1,3 +1,4 @@
+import { GroupedCharacters } from "../../Components/Character/GroupedCharacters";
 import { PortraitCard } from "../../Components/Cards/PortraitCard";
 import { ErrorLoader, PanelLoader } from "../../Components/Loaders/loaders";
 import { SkillLevelBlock } from "../../Components/Skills/SkillLevelBlock";
@@ -84,87 +85,94 @@ const CharacterSkillQueues = () => {
         ></Form.Check>
       </FormGroup>
 
-      <div className="d-flex justify-content-around align-items-center flex-row flex-wrap">
-        {filtered_data?.map((char) => {
-          let char_status = char.queue?.length ? { border: "success" } : { border: "warning" };
-          if (char.queue?.length && !char.queue[0].end) {
-            char_status = { border: "info" };
-          }
+      <GroupedCharacters items={filtered_data}>
+        {(characters) => (
+          <div className="d-flex justify-content-around align-items-center flex-row flex-wrap">
+            {characters.map((char) => {
+              let char_status = char.queue?.length ? { border: "success" } : { border: "warning" };
+              if (char.queue?.length && !char.queue[0].end) {
+                char_status = { border: "info" };
+              }
 
-          return (
-            <PortraitCard
-              {...char_status}
-              isFetching={isFetching}
-              character={char.character}
-              heading={char.character.character_name}
-              roundedImages={"10"}
-              portaitSize={450}
-            >
-              <h6>
-                {char.character.corporation_name}
-                {char.character.alliance_name && ` (${char.character.alliance_name})`}
-              </h6>
-              <div style={{ width: "450px" }}>
-                <div>
-                  <Table striped style={{ marginBottom: 0 }}>
-                    <thead>
-                      <tr key={`head-${char.character.character_name}`}>
-                        <th>{t("Skill")}</th>
-                        <th className="text-end">{t("Level")}</th>
-                      </tr>
-                    </thead>
-                  </Table>
-                  <div
-                    style={{ width: "450px", height: "350px", overflowY: "auto" }}
-                    className="card-img-bottom"
-                  >
-                    <Table striped>
-                      <tbody>
-                        {char.queue?.map((s) => {
-                          return (
-                            <tr key={`${char.character.character_name}${s.skill}${s.end_level}`}>
-                              <td className="no-margin">
-                                <div className="d-flex justify-content-between">
-                                  <p className="m-0">{s.skill}</p>
-                                  <SkillLevelBlock
-                                    level={s.end_level}
-                                    trained={s.current_level ?? undefined}
-                                    active={s.current_level ?? undefined}
-                                    queued={s.end_level}
-                                  />
-                                </div>
-                                <div className="d-flex justify-content-between">
-                                  {s.end ? (
-                                    <>
-                                      <ReactTimeAgo date={Date.parse(s.end)} />
-                                      <p className="m-0 small">
-                                        {(s.end_sp - s.start_sp).toLocaleString()}/
-                                        {s.end_sp.toLocaleString()} SP
-                                      </p>
-                                    </>
-                                  ) : (
-                                    <>
-                                      <i className="fa-solid fa-pause"></i>
-                                      <p className="m-0">
-                                        {(s.end_sp - s.start_sp).toLocaleString()}/
-                                        {s.end_sp.toLocaleString()} SP
-                                      </p>
-                                    </>
-                                  )}
-                                </div>
-                              </td>
-                            </tr>
-                          );
-                        })}
-                      </tbody>
-                    </Table>
+              return (
+                <PortraitCard
+                  key={char.character.character_id}
+                  {...char_status}
+                  isFetching={isFetching}
+                  character={char.character}
+                  heading={char.character.character_name}
+                  roundedImages={"10"}
+                  portaitSize={450}
+                >
+                  <h6>
+                    {char.character.corporation_name}
+                    {char.character.alliance_name && ` (${char.character.alliance_name})`}
+                  </h6>
+                  <div style={{ width: "450px" }}>
+                    <div>
+                      <Table striped style={{ marginBottom: 0 }}>
+                        <thead>
+                          <tr key={`head-${char.character.character_name}`}>
+                            <th>{t("Skill")}</th>
+                            <th className="text-end">{t("Level")}</th>
+                          </tr>
+                        </thead>
+                      </Table>
+                      <div
+                        style={{ width: "450px", height: "350px", overflowY: "auto" }}
+                        className="card-img-bottom"
+                      >
+                        <Table striped>
+                          <tbody>
+                            {char.queue?.map((s) => {
+                              return (
+                                <tr
+                                  key={`${char.character.character_name}${s.skill}${s.end_level}`}
+                                >
+                                  <td className="no-margin">
+                                    <div className="d-flex justify-content-between">
+                                      <p className="m-0">{s.skill}</p>
+                                      <SkillLevelBlock
+                                        level={s.end_level}
+                                        trained={s.current_level ?? undefined}
+                                        active={s.current_level ?? undefined}
+                                        queued={s.end_level}
+                                      />
+                                    </div>
+                                    <div className="d-flex justify-content-between">
+                                      {s.end ? (
+                                        <>
+                                          <ReactTimeAgo date={Date.parse(s.end)} />
+                                          <p className="m-0 small">
+                                            {(s.end_sp - s.start_sp).toLocaleString()}/
+                                            {s.end_sp.toLocaleString()} SP
+                                          </p>
+                                        </>
+                                      ) : (
+                                        <>
+                                          <i className="fa-solid fa-pause"></i>
+                                          <p className="m-0">
+                                            {(s.end_sp - s.start_sp).toLocaleString()}/
+                                            {s.end_sp.toLocaleString()} SP
+                                          </p>
+                                        </>
+                                      )}
+                                    </div>
+                                  </td>
+                                </tr>
+                              );
+                            })}
+                          </tbody>
+                        </Table>
+                      </div>
+                    </div>
                   </div>
-                </div>
-              </div>
-            </PortraitCard>
-          );
-        })}
-      </div>
+                </PortraitCard>
+              );
+            })}
+          </div>
+        )}
+      </GroupedCharacters>
     </>
   );
 };

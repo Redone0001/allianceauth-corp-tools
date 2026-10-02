@@ -1,3 +1,4 @@
+import { GroupedCharacters } from "../../Components/Character/GroupedCharacters";
 import CharacterStatusPanels from "../../Components/Character/CharacterStatusPanels";
 import CharacterStatusTable from "../../Components/Character/CharacterStatusTable";
 import { loadCharacterStatus } from "../../api/character";
@@ -51,10 +52,16 @@ const CharacterStatus = () => {
             ? t("No issues found — all characters are active.")
             : t("No characters found.")}
         </Alert>
-      ) : table ? (
-        <CharacterStatusTable {...{ isFetching }} data={filteredData} />
       ) : (
-        <CharacterStatusPanels {...{ isFetching }} data={filteredData} />
+        <GroupedCharacters items={filteredData.characters}>
+          {(characters) =>
+            table ? (
+              <CharacterStatusTable {...{ isFetching }} data={{ ...filteredData, characters }} />
+            ) : (
+              <CharacterStatusPanels {...{ isFetching }} data={{ ...filteredData, characters }} />
+            )
+          }
+        </GroupedCharacters>
       )}
     </>
   );

@@ -23,6 +23,7 @@ Included `Bits and Bobs`:
   - Contacts
   - Contracts
   - Corporation History
+  - Character groups (Characters → Grouping of character): account owners can create up to 50 named groups, with searchable character membership. Names are unique within the account and limited to 60 characters. Group display is available in Skill List Checks, Skill Queues, and Status; unassigned characters remain under Ungrouped. Authorized auditors can view groups, but only the owner can edit them.
   - Location and Active Ship
   - Loyalty Points
   - Markets

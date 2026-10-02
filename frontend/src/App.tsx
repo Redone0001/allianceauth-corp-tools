@@ -1,3 +1,4 @@
+import CharacterGroupsPage from "./Pages/Char/Groups";
 import AccountList from "./Pages/Char/AccountList";
 import CharacterActivityMap from "./Pages/Char/ActivityMap";
 import CharacterAssetGroups from "./Pages/Char/AssetsGroups";
@@ -99,6 +100,7 @@ function App() {
               <Route path="audit/r/:characterID/" element={<CharacterAudit />}>
                 <Route index element={<Navigate to="account/overview" replace />} />
                 <Route path="account/overview" element={<CharacterOverview />} />
+                <Route path="account/groups" element={<CharacterGroupsPage />} />
                 <Route path="account/status" element={<CharacterStatus />} />
                 <Route path="account/assets" element={<CharacterAssetGroups />} />
                 <Route path="account/listassets" element={<CharacterAssets />} />
