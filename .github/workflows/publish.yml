@@ -9,6 +9,8 @@ on:
 jobs:
   release:
     runs-on: ubuntu-latest
+    env:
+      PYPI_TOKEN: ${{ secrets.PYPI_TOKEN }}
     steps:
       - uses: actions/checkout@v7
 
@@ -30,7 +32,7 @@ jobs:
         run: make package
 
       - name: Upload Package
-        if: ${{ !env.ACT }} # Don't run in a local test environment
+        if: ${{ !env.ACT && env.PYPI_TOKEN != '' }} # Upload only when publishing is configured
         env:
           TWINE_USERNAME: __token__
           TWINE_PASSWORD: ${{ secrets.PYPI_TOKEN }}
